@@ -11,12 +11,12 @@ Panel **Strinova** en el viewport 3D (tecla N):
 | Botón | Qué hace |
 |---|---|
 | **Importar personaje** | Importa un `.uemodel` (UEFormat) o `.fbx`. Detecta la carpeta del personaje y, si está marcado, aplica shading y rig en el mismo paso. |
-| **Aplicar Toon Shading** | Reconstruye los materiales a partir de los JSON y PNG de FModel (toon con luz del sol, cara con SDF, normal map, matcap). Crea `ST_Light` y los empties de la cabeza. |
-| **Panel de iluminación** | Lo crea el shading junto al personaje (`ST Lighting Panel`): dos ruedas HSV, **Luz** (lado iluminado) y **Ambiente** (sombra). En Pose Mode, la posición del selector en la rueda da el tono y la saturación, y la barra da el valor. Se puede animar y sigue al hueso `root` del personaje. Presets *Neutral*, *Galería (fría)* y *Atardecer* en el panel N. |
+| **Aplicar Toon Shading** | Reconstruye los materiales a partir de los JSON y PNG de FModel (toon con luz del sol, cara con SDF, normal map, matcap). Crea `ST_Light` y los empties de la cabeza. Añade el **contorno** (casco invertido, modificador `ST Outline`): la máscara sale de la alpha de los vertex colors `COL0` del juego (sin contorno en cara y ojos) y el color es la textura base oscurecida. Grosor ajustable en el panel N. |
+| **Controles de iluminación** | Los crea el shading junto al personaje y, al generar el rig, pasan a ser parte de él (colección de huesos *Iluminacion*), así que se animan en la misma acción que el personaje. **Ruedas HSV** *Luz* (lado iluminado) y *Ambiente* (sombra): la posición del selector da tono y saturación, y la barra, el valor. **Sol** (`ST Sol`): la luz llega desde donde esté este control hacia la cabeza, y mueve las sombras del cuerpo y de la cara. Todo sigue al hueso `root`. |
 | **Rig + Física** | Genera un rig Rigify con el rigger NTE de Gacha Setup (comparte el esqueleto `Bip001-` de Strinova) y aplica la física por constraints. |
-| **Física por Constraints** | Aplica solo la física a un rig ya generado. Sliders *Inercia pelo* / *Inercia ropa* (0 = rígido, 1 = no sigue). |
+| **Física por Constraints** | Aplica (o rehace) solo la física en un rig ya generado. Sliders *Inercia pelo* (0.56), *Inercia flequillo* (0.28), *Inercia ropa* (0.32) e *Inercia pecho* (0.2): un 20% más duros que los de Gacha Setup. El flequillo y los mechones delanteros (los que terminan delante de los ojos) se mueven la mitad que el pelo de atrás. |
 
-La física es inercia sin simulación: las cadenas de pelo y ropa siguen solo en parte el giro de la cabeza y el torso, en tiempo real y sin reproducir la línea de tiempo.
+La física usa el método de Gacha Setup: cada hueso de pelo, ropa y pecho (`chest_l/r`) tiene un *Damped Track* hacia su propio hijo. Es un ciclo de dependencia a propósito: Blender lo resuelve con la evaluación anterior, así que al animar las cadenas se quedan atrás del cuerpo y se ven con inercia. A diferencia del botón de Gacha, solo toca esos huesos (no los del IK), y antes reorienta cada hueso hacia su hijo para que la pose de reposo no cambie. **Limitación:** el resultado depende de los fotogramas evaluados antes; reproducir de corrido no da lo mismo que saltar a un fotograma, y un render de fotogramas sueltos puede diferir del viewport.
 
 ## Requisitos
 
