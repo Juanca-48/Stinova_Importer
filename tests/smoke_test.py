@@ -22,6 +22,11 @@ try:
     assert toon > 0, "ningun material con toon"
     assert inertia > 0, "sin cadenas con inercia"
     assert heads == {"DEF-spine.006"}, "empties de la cabeza mal parentados"
+    assert "ST Sol" in rig.data.bones and "ST Lighting Panel" not in bpy.data.objects, "panel de iluminacion fuera del rig"
+    sun = bpy.data.objects["ST_Light"]
+    assert {c.target for c in sun.constraints} == {rig}, "ST_Light no sigue al control ST Sol del rig"
+    shown = {c.name for c in rig.data.collections_all if c.is_visible and c.bones}
+    assert not shown & {"Hair", "Clothes", "Other", "ST Inertia"}, f"huesos que no son controladores visibles: {shown}"
     print("[smoke] OK")
 except Exception:
     traceback.print_exc()
