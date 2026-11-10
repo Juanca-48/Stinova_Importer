@@ -14,7 +14,8 @@ bl_info = {
 # (lightDir, headForward, headUp).
 # shortcut: shadow colour is a flat tint, not the game's RampID atlas; swap in ramps once exported.
 # shortcut: Mask1/Mask2 are not used yet; their channel meaning is still unverified.
-import bpy, os, re, json, mathutils
+import bpy, os, re, json, colorsys, mathutils
+from math import cos, sin, tau  # imported by name: math() below is a node helper
 from bpy_extras.io_utils import ImportHelper
 
 SHADOW_TINT = (0.80, 0.70, 0.82, 1.0)
@@ -26,12 +27,13 @@ def index_files(root, ext):
     for d, _, files in os.walk(root):
         for f in files:
             if f.lower().endswith(ext):
-                idx.setdefault(os.path.splitext(f)[0], []).append(os.path.join(d, f))
+                # case-insensitive: JSONs say T_Aika_body_1_D for the file T_Aika_Body_1_D.png
+                idx.setdefault(os.path.splitext(f)[0].lower(), []).append(os.path.join(d, f))
     return idx
 
 
 def pick(idx, name, skin):
-    paths = idx.get(name) or []
+    paths = idx.get(name.lower()) or []
     for p in paths:  # prefer the skin folder the asset belongs to
         if f"\\{skin}\\" in p:
             return p
@@ -104,6 +106,36 @@ def soft_step(nt, value, center, softness, x, y):
     return mr.outputs["Result"]
 
 
+def hsv_wheel(nt, a, b, value, x, y):
+    """Colour from a point on the lighting panel wheel: angle = hue, radius = saturation."""
+    ang = math(nt, "ARCTAN2", b, a, x, y)
+    hue = math(nt, "FRACT", math(nt, "DIVIDE", ang, tau, x + 150, y), None, x + 300, y)
+    r2 = math(nt, "ADD", math(nt, "MULTIPLY", a, a, x, y - 120), math(nt, "MULTIPLY", b, b, x, y - 200), x + 150, y - 160)
+    sat = math(nt, "MINIMUM", math(nt, "SQRT", r2, None, x + 300, y - 160), 1.0, x + 450, y - 160)
+    cc = node(nt, "ShaderNodeCombineColor", x + 600, y, mode="HSV")
+    nt.links.new(hue, cc.inputs[0])
+    nt.links.new(sat, cc.inputs[1])
+    nt.links.new(value, cc.inputs[2])
+    return cc.outputs[0]
+
+
+def scene_color(nt, name, x, y):
+    # View Layer attribute reads the scene custom property (x, z, value of a panel picker,
+    # copied there by drivers), so one panel drives every material
+    a = node(nt, "ShaderNodeAttribute", x - 400, y, attribute_type="VIEW_LAYER", attribute_name=name)
+    sep = node(nt, "ShaderNodeSeparateXYZ", x - 250, y)
+    nt.links.new(a.outputs["Vector"], sep.inputs[0])
+    return hsv_wheel(nt, sep.outputs["X"], sep.outputs["Y"], sep.outputs["Z"], x - 100, y)
+
+
+def toon_mix(nt, lit, base, tint, x, y):
+    """Lit side = base * light colour, shadow side = base * shadow tint * ambient colour."""
+    light = scene_color(nt, "st_light_pick", x - 200, y + 250)
+    ambient = scene_color(nt, "st_ambient_pick", x - 200, y - 250)
+    shadow = mix_rgb(nt, "MULTIPLY", 1.0, mix_rgb(nt, "MULTIPLY", 1.0, base, tint, x, y - 100), ambient, x + 150, y - 100)
+    return mix_rgb(nt, "MIX", lit, shadow, mix_rgb(nt, "MULTIPLY", 1.0, base, light, x, y + 100), x + 300, y)
+
+
 def shader_out(nt, color, alpha, out_node, x, y):
     em = node(nt, "ShaderNodeEmission", x, y)
     nt.links.new(color, em.inputs["Color"])
@@ -139,8 +171,7 @@ def build_toon_group():
     N = vmath(nt, "NORMALIZE", gi.outputs["Normal"], None, -700, 100).outputs[0]
     ndl = vmath(nt, "DOT_PRODUCT", N, L, -400, 200).outputs["Value"]
     lit = soft_step(nt, ndl, gi.outputs["Middle Value"], gi.outputs["Softness"], -200, 200)
-    shadow = mix_rgb(nt, "MULTIPLY", 1.0, gi.outputs["Base Color"], gi.outputs["Shadow Tint"], 100, 0)
-    col = mix_rgb(nt, "MIX", lit, shadow, gi.outputs["Base Color"], 300, 100)
+    col = toon_mix(nt, lit, gi.outputs["Base Color"], gi.outputs["Shadow Tint"], 100, 100)
     col = mix_rgb(nt, "ADD", gi.outputs["MatCap Pow"], col, gi.outputs["MatCap"], 450, 100)
     col = mix_rgb(nt, "ADD", 1.0, col, gi.outputs["Emission"], 600, 100)
     shader_out(nt, col, gi.outputs["Alpha"], go, 650, -150)
@@ -203,8 +234,7 @@ def build_face_group():
     thr = math(nt, "MULTIPLY_ADD", f, -0.5, 0, 450)
     nt.nodes[-1].inputs[2].default_value = 0.5
     lit = soft_step(nt, gi.outputs["SDF"], thr, gi.outputs["Softness"], 200, 450)
-    shadow = mix_rgb(nt, "MULTIPLY", 1.0, gi.outputs["Base Color"], gi.outputs["Shadow Tint"], 400, 150)
-    col = mix_rgb(nt, "MIX", lit, shadow, gi.outputs["Base Color"], 550, 300)
+    col = toon_mix(nt, lit, gi.outputs["Base Color"], gi.outputs["Shadow Tint"], 400, 150)
     shader_out(nt, col, gi.outputs["Alpha"], go, 650, -300)
     return ng
 
@@ -340,7 +370,10 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
             nt.links.new(mc.outputs["Color"], g.inputs["MatCap"])
             g.inputs["MatCap Pow"].default_value = sca.get("MatCapPow", 0.0)
             used.append(os.path.basename(mc_p))
-        e = cols.get("EmissiveColor")
+        # EmissiveColor is a leftover default in ~700 materials; the game only uses it behind the
+        # EnableEmissive static switch (otherwise it whites out e.g. Chiyo S105, Aika S207 face).
+        # shortcut: applied unmasked; find the emission mask channel if a material glows too much.
+        e = cols.get("EmissiveColor") if sw.get("EnableEmissive") else None
         if e:
             g.inputs["Emission"].default_value = (e["R"], e["G"], e["B"], 1)
     translucent = props.get("BlendMode") == "BLEND_Translucent"
@@ -349,7 +382,161 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
     report[mat.name] = {"tipo": "face" if is_face else "toon", "texturas": used}
 
 
+# (light, ambient) measured on Kanami S001's white boots in the reference videos (linear, vs. base colour)
+LIGHT_PRESETS = {
+    "NEUTRAL": ("Neutral", (1.0, 1.0, 1.0), (1.0, 1.0, 1.0)),
+    "GALERIA": ("Galeria (fria)", (0.76, 0.79, 0.83), (0.45, 0.52, 0.50)),
+    "ATARDECER": ("Atardecer", (0.90, 0.80, 0.74), (0.81, 0.69, 0.52)),
+}
+
+
+# ---------- lighting panel (HSV wheels in the viewport, like Gacha Setup's Genshin panel) ----------
+PANEL = "ST Lighting Panel"
+PICKERS = (("Luz", "st_light_pick", 0.0), ("Ambiente", "st_ambient_pick", 3.2))  # bone, scene prop, x offset
+VALUE_MAX = 1.5  # value slider range (1 = texture colour, >1 overexposes)
+
+
+def _mesh_obj(name, verts, faces, parent, loc, mat=None):
+    me = bpy.data.meshes.get(name) or bpy.data.meshes.new(name)
+    me.clear_geometry()
+    me.from_pydata(verts, [] if faces else [(i, (i + 1) % len(verts)) for i in range(len(verts))], faces or [])
+    if mat and not me.materials:
+        me.materials.append(mat)
+    ob = bpy.data.objects.get(name) or bpy.data.objects.new(name, me)
+    if parent:
+        ob.parent, ob.location = parent, loc
+        ob.hide_select = ob.hide_render = True  # viewport-only UI
+    return ob
+
+
+def _circle(r, n=48):
+    return [(r * cos(tau * i / n), 0.0, r * sin(tau * i / n)) for i in range(n)]
+
+
+def _emission_mat(name, build):
+    m = bpy.data.materials.get(name)
+    if m:
+        return m
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    nt = m.node_tree
+    nt.nodes.clear()
+    tc = node(nt, "ShaderNodeTexCoord", -900, 0)
+    sep = node(nt, "ShaderNodeSeparateXYZ", -700, 0)
+    nt.links.new(tc.outputs["Object"], sep.inputs[0])
+    em = node(nt, "ShaderNodeEmission", 400, 0)
+    nt.links.new(build(nt, sep), em.inputs["Color"])
+    nt.links.new(em.outputs[0], node(nt, "ShaderNodeOutputMaterial", 600, 0).inputs["Surface"])
+    return m
+
+
+def _wheel_colour(nt, sep):
+    one = node(nt, "ShaderNodeValue", -500, -300)
+    one.outputs[0].default_value = 1.0
+    return hsv_wheel(nt, sep.outputs["X"], sep.outputs["Z"], one.outputs[0], -500, 0)
+
+
+def _ramp_colour(nt, sep):
+    v = math(nt, "DIVIDE", sep.outputs["Z"], VALUE_MAX, -500, 0)
+    cc = node(nt, "ShaderNodeCombineColor", -300, 0)
+    for i in range(3):
+        nt.links.new(v, cc.inputs[i])
+    return cc.outputs[0]
+
+
+def ensure_lighting_panel(context, near):
+    """Armature with an HSV wheel + value slider per colour. Drivers copy each picker's local
+    position into a scene property (no Python expressions, so no auto-run prompt); the toon
+    shader reads it through a View Layer attribute and converts it to RGB."""
+    sc = context.scene
+    pan = bpy.data.objects.get(PANEL)
+    if not pan:
+        arm = bpy.data.armatures.new(PANEL)
+        arm.display_type = "WIRE"
+        pan = bpy.data.objects.new(PANEL, arm)
+        sc.collection.objects.link(pan)
+        bb = [near.matrix_world @ mathutils.Vector(c) for c in near.bound_box]
+        pan.location = (max(v.x for v in bb) + 0.4, 0.0, max(v.z for v in bb) * 0.8)
+        pan.scale = (0.1, 0.1, 0.1)
+        pan.show_in_front = True
+        prev = context.view_layer.objects.active
+        context.view_layer.objects.active = pan
+        bpy.ops.object.mode_set(mode="EDIT")
+        eb = arm.edit_bones
+        root = eb.new("Panel")
+        root.head, root.tail = (0, 0, 0), (0, 0.3, 0)
+        for name, _, ox in PICKERS:
+            for bname, head in ((f"{name} centro", (ox, 0, 0)), (name, (ox, 0, 0)), (f"{name} valor", (ox + 1.4, 0, 0))):
+                b = eb.new(bname)
+                b.head, b.tail, b.parent = head, (head[0], 0.3, head[2]), root
+        bpy.ops.object.mode_set(mode="POSE")
+        ring = _mesh_obj("WGT-ST_picker", _circle(0.12), None, None, None)
+        bar = _mesh_obj("WGT-ST_slider", [(-0.25, 0, 0), (0.25, 0, 0)], None, None, None)
+        wheel_mat = _emission_mat("ST Wheel", _wheel_colour)
+        ramp_mat = _emission_mat("ST Value Ramp", _ramp_colour)
+        for name, _, ox in PICKERS:
+            arm.bones[f"{name} centro"].hide = True
+            p = pan.pose.bones[name]
+            p.custom_shape, p.lock_location[1] = ring, True
+            p.lock_rotation = p.lock_scale = (True, True, True)
+            c = p.constraints.new("LIMIT_DISTANCE")
+            c.target, c.subtarget, c.limit_mode = pan, f"{name} centro", "LIMITDIST_INSIDE"
+            c.distance = 1.0 * pan.scale.x  # world units; shader clamps saturation anyway
+            s = pan.pose.bones[f"{name} valor"]
+            s.custom_shape, s.lock_location[0], s.lock_location[1] = bar, True, True
+            s.lock_rotation = s.lock_scale = (True, True, True)
+            lim = s.constraints.new("LIMIT_LOCATION")
+            lim.owner_space, lim.use_min_z, lim.use_max_z, lim.min_z, lim.max_z = "LOCAL", True, True, 0.0, VALUE_MAX
+            n = 64
+            disc = _mesh_obj(f"ST Rueda {name}", [(0, 0, 0)] + _circle(1.0, n), [(0, i + 1, (i + 1) % n + 1) for i in range(n)], pan, (ox, 0.05, 0), wheel_mat)
+            track = _mesh_obj(f"ST Barra {name}", [(-0.08, 0, 0), (0.08, 0, 0), (0.08, 0, VALUE_MAX), (-0.08, 0, VALUE_MAX)], [(0, 1, 2, 3)], pan, (ox + 1.4, 0.05, 0), ramp_mat)
+            label = bpy.data.objects.get(f"ST Texto {name}") or bpy.data.objects.new(f"ST Texto {name}", bpy.data.curves.new(f"ST Texto {name}", "FONT"))
+            label.data.body, label.data.size, label.data.align_x = name, 0.45, "CENTER"
+            label.parent, label.location, label.rotation_euler = pan, (ox + 0.4, 0.05, 1.25), (1.5708, 0, 0)
+            label.hide_select = label.hide_render = True
+            for ob in (disc, track, label):
+                if ob.name not in sc.collection.objects:
+                    sc.collection.objects.link(ob)
+        arm.bones["Panel"].hide = True
+        bpy.ops.object.mode_set(mode="OBJECT")
+        context.view_layer.objects.active = prev
+        apply_light_preset(pan, "NEUTRAL")
+    attach_panel(context, pan, near.find_armature())
+    for name, prop, _ in PICKERS:
+        if prop not in sc:
+            sc[prop] = (0.0, 0.0, 1.0)
+        for i, (bone, ch) in enumerate(((name, "LOC_X"), (name, "LOC_Z"), (f"{name} valor", "LOC_Z"))):
+            sc.driver_remove(f'["{prop}"]', i)
+            drv = sc.driver_add(f'["{prop}"]', i).driver
+            drv.type = "AVERAGE"
+            t = drv.variables.new()
+            t.type = "TRANSFORMS"
+            t.targets[0].id, t.targets[0].bone_target = pan, bone
+            t.targets[0].transform_type, t.targets[0].transform_space = ch, "LOCAL_SPACE"
+    return pan
+
+
+def attach_panel(context, pan, arm):
+    """Make the lighting panel follow the character's root bone, keeping where it is now."""
+    if not (pan and arm and "root" in arm.data.bones):
+        return
+    if (pan.parent, pan.parent_type, pan.parent_bone) == (arm, "BONE", "root"):
+        return
+    mw = pan.matrix_world.copy()
+    pan.parent, pan.parent_type, pan.parent_bone = arm, "BONE", "root"
+    context.view_layer.update()
+    pan.matrix_world = mw
+
+
+def apply_light_preset(pan, key):
+    for (name, _, _), rgb in zip(PICKERS, LIGHT_PRESETS[key][1:]):
+        h, s, v = colorsys.rgb_to_hsv(*rgb)
+        pan.pose.bones[name].location = (s * cos(tau * h), 0.0, s * sin(tau * h))
+        pan.pose.bones[f"{name} valor"].location = (0.0, 0.0, v)
+
+
 def run(obj, char_dir):
+    ensure_lighting_panel(bpy.context, obj)
     arm = obj.find_armature()
     mesh_skin = skin_of(obj.name, "")
     tex_idx = index_files(char_dir, ".png")
@@ -438,6 +625,24 @@ def target_rig(context):
     return ob if ob and ob.type == "ARMATURE" and "Hair" in ob.data.collections_all else None
 
 
+class STRINOVA_OT_light_preset(bpy.types.Operator):
+    bl_idname = "strinova.light_preset"
+    bl_label = "Preset de iluminacion"
+    bl_description = "Ajusta el color de luz y de ambiente del toon shading"
+    bl_options = {"REGISTER", "UNDO"}
+
+    preset: bpy.props.EnumProperty(items=[(k, v[0], "") for k, v in LIGHT_PRESETS.items()])
+
+    @classmethod
+    def poll(cls, context):
+        return PANEL in bpy.data.objects
+
+    def execute(self, context):
+        apply_light_preset(bpy.data.objects[PANEL], self.preset)
+        context.view_layer.update()
+        return {"FINISHED"}
+
+
 class STRINOVA_OT_inertia(bpy.types.Operator):
     bl_idname = "strinova.inertia"
     bl_label = "Fisica por Constraints"
@@ -481,8 +686,22 @@ class STRINOVA_OT_rig(bpy.types.Operator):
             o.select_set(False)
         context.view_layer.objects.active = arm
         arm.select_set(True)
-        # NTE shares Strinova's hyphenated Bip001 skeleton, so Gacha Setup's NTE rigger maps it as is
-        bpy.ops.hoyoverse.rig_character(game_type="NEVERNESS_TO_EVERNESS")
+        # Gacha Setup rigs the wrong armature if our lighting panel is in the scene: hide it meanwhile
+        pan = bpy.data.objects.get(PANEL)
+        pan_colls = list(pan.users_collection) if pan else []
+        pan_mw = pan.matrix_world.copy() if pan else None  # its parent skeleton gets moved/replaced
+        for c in pan_colls:
+            c.objects.unlink(pan)
+        try:
+            # NTE shares Strinova's hyphenated Bip001 skeleton, so Gacha Setup's NTE rigger maps it as is
+            bpy.ops.hoyoverse.rig_character(game_type="NEVERNESS_TO_EVERNESS")
+        finally:
+            for c in pan_colls:
+                c.objects.link(pan)
+        if pan:
+            pan.parent = None
+            pan.matrix_world = pan_mw
+            attach_panel(context, pan, obj.find_armature())  # follow the new rig's root
         rig = obj.find_armature()
         if not rig or "DEF-spine.006" not in rig.pose.bones:
             self.report({"ERROR"}, "Gacha Setup no genero el rig (revisa la consola)")
@@ -603,6 +822,14 @@ class STRINOVA_PT_panel(bpy.types.Panel):
         col.label(text="Carpeta del personaje (FModel):")
         col.prop(context.scene, "strinova_char_dir", text="")
         col.operator(STRINOVA_OT_setup.bl_idname, icon="SHADING_RENDERED")
+        sc = context.scene
+        if PANEL in bpy.data.objects:
+            box = col.box()
+            box.label(text="Iluminacion: mueve los selectores del panel", icon="COLOR")
+            box.label(text="(Pose Mode: rueda = tono/saturacion, barra = valor)")
+            row = box.row(align=True)
+            for key, (label, _, _) in LIGHT_PRESETS.items():
+                row.operator(STRINOVA_OT_light_preset.bl_idname, text=label).preset = key
         col.operator(STRINOVA_OT_rig.bl_idname, icon="ARMATURE_DATA")
         col.operator(STRINOVA_OT_inertia.bl_idname, icon="FORCE_WIND")
         rig = target_rig(context)
@@ -613,7 +840,7 @@ class STRINOVA_PT_panel(bpy.types.Panel):
             col.label(text="Selecciona la malla o su armature", icon="INFO")
 
 
-classes = (STRINOVA_OT_import, STRINOVA_OT_setup, STRINOVA_OT_rig, STRINOVA_OT_inertia, STRINOVA_PT_panel)
+classes = (STRINOVA_OT_import, STRINOVA_OT_setup, STRINOVA_OT_light_preset, STRINOVA_OT_rig, STRINOVA_OT_inertia, STRINOVA_PT_panel)
 
 
 def register():
