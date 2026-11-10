@@ -4,13 +4,14 @@ bl_info = {
     "version": (0, 1, 0),
     "blender": (5, 2, 0),
     "location": "3D View > Sidebar (N) > Strinova",
-    "description": "Toon shading de personajes de Strinova a partir de los JSON/PNG exportados con FModel",
-    "category": "Material",
+    "description": "Importa personajes de Strinova (FModel) con toon shading, rig y fisica por constraints",
+    "category": "Import-Export",
 }
 
-# Strinova (PaperMan) toon setup - preliminary test.
-# Builds a toon shader from FModel's material JSONs, reusing Gacha Setup's idea of
-# light/head vectors stored as mesh attributes (lightDir, headForward, headUp).
+# Strinova (PaperMan) character setup: import (.uemodel/.fbx), toon shading from FModel's
+# material JSONs, Rigify rig via Gacha Setup's NTE rigger, and constraint-based inertia.
+# The shader reuses Gacha Setup's idea of light/head vectors stored as mesh attributes
+# (lightDir, headForward, headUp).
 # shortcut: shadow colour is a flat tint, not the game's RampID atlas; swap in ramps once exported.
 # shortcut: Mask1/Mask2 are not used yet; their channel meaning is still unverified.
 import bpy, os, re, json, mathutils
