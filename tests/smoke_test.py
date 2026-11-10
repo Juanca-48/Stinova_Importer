@@ -61,6 +61,15 @@ try:
     rest_diff = float(np.linalg.norm(on - coords(), axis=1).max())
     print(f"[smoke] inercia en reposo mueve la malla: {rest_diff:.4f} m")
     assert rest_diff < 0.001, "la fisica deforma la malla en la pose de reposo"
+    for c in inert:
+        c.mute = False
+    rig["st_physics"] = False  # the panel toggle must zero every inertia influence
+    rig.update_tag()
+    bpy.context.view_layer.update()
+    live = max(c.influence for c in inert)
+    rig["st_physics"] = True
+    print(f"[smoke] influencia maxima con la fisica apagada: {live:.3f}")
+    assert live == 0, "el interruptor de fisica no apaga las restricciones"
     print("[smoke] OK")
 except Exception:
     traceback.print_exc()

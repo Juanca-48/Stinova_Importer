@@ -40,12 +40,15 @@ class STRINOVA_PT_panel(bpy.types.Panel):
         if omod and omod.node_group:
             col.prop(shading.outline_input(omod, "Grosor"), "value", text="Grosor contorno")
         col.operator(rig.STRINOVA_OT_rig.bl_idname, icon="ARMATURE_DATA")
-        col.operator(rig.STRINOVA_OT_inertia.bl_idname, icon="FORCE_WIND")
         arm = rig.target_rig(context)
-        if arm:
+        if arm and rig.PHYSICS_PROP in arm:
+            box = col.box()
+            box.prop(arm, f'["{rig.PHYSICS_PROP}"]', text="Fisica", toggle=True, icon="FORCE_WIND")
+            sliders = box.column()
+            sliders.active = bool(arm[rig.PHYSICS_PROP])  # greyed out while physics is off
             for prop, _, label in rig.INERTIA_PROPS.values():
                 if prop in arm:
-                    col.prop(arm, f'["{prop}"]', text=label, slider=True)
+                    sliders.prop(arm, f'["{prop}"]', text=label, slider=True)
         if not common.target_mesh(context):
             col.label(text="Selecciona la malla o su armature", icon="INFO")
 
