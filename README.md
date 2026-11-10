@@ -18,6 +18,20 @@ Panel **Strinova** en el viewport 3D (tecla N):
 
 La física usa el método de Gacha Setup: cada hueso de pelo, ropa y pecho (`chest_l/r`) tiene un *Damped Track* hacia su propio hijo. Es un ciclo de dependencia a propósito: Blender lo resuelve con la evaluación anterior, así que al animar las cadenas se quedan atrás del cuerpo y se ven con inercia. A diferencia del botón de Gacha, solo toca esos huesos (no los del IK), y antes reorienta cada hueso hacia su hijo para que la pose de reposo no cambie. **Limitación:** el resultado depende de los fotogramas evaluados antes; reproducir de corrido no da lo mismo que saltar a un fotograma, y un render de fotogramas sueltos puede diferir del viewport.
 
+## Estructura del código
+
+Cada área vive en su propio módulo, para que un cambio en una no rompa otra:
+
+| Módulo | Qué contiene |
+|---|---|
+| `strinova_toon/importer.py` | Importar `.uemodel` / `.fbx` y detectar la carpeta de FModel. Llama al shading y al rig por sus botones, sin importar su código |
+| `strinova_toon/rig.py` | Rig con el rigger NTE de Gacha Setup, arreglos sobre él (B-Bones, dedos, pecho) y física de pelo, ropa y pecho |
+| `strinova_toon/shading.py` | Materiales toon, sol y empties de la cabeza, panel de iluminación y contorno |
+| `strinova_toon/common.py` | Utilidades que usan los tres (`target_mesh`) |
+| `strinova_toon/__init__.py` | Datos del add-on, panel N y registro |
+
+El rig depende del shading en un único punto: `shading.lighting_panel_aside()`, que aparta el panel de iluminación mientras corre el rigger de Gacha y después lo une al rig.
+
 ## Requisitos
 
 - Blender 5.2
