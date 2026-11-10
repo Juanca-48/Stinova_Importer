@@ -2,7 +2,7 @@
 
 Add-on de Blender para importar personajes de **Strinova** exportados con FModel y dejarlos listos: toon shading, rig con controles y física por constraints en pelo y ropa.
 
-Probado en Blender 5.2 con Kanami S215, Michele S001 y Aika S105.
+Probado en Blender 5.2: importación y shading con las 91 skins exportadas de Kanami, Chiyo, Aika (Eika), Flavia y Nora; rig con Kanami, Michele y Aika.
 
 ## Qué hace
 
@@ -12,6 +12,7 @@ Panel **Strinova** en el viewport 3D (tecla N):
 |---|---|
 | **Importar personaje** | Importa un `.uemodel` (UEFormat) o `.fbx`. Detecta la carpeta del personaje y, si está marcado, aplica shading y rig en el mismo paso. |
 | **Aplicar Toon Shading** | Reconstruye los materiales a partir de los JSON y PNG de FModel (toon con luz del sol, cara con SDF, normal map, matcap). Crea `ST_Light` y los empties de la cabeza. |
+| **Panel de iluminación** | Lo crea el shading junto al personaje (`ST Lighting Panel`): dos ruedas HSV, **Luz** (lado iluminado) y **Ambiente** (sombra). En Pose Mode, la posición del selector en la rueda da el tono y la saturación, y la barra da el valor. Se puede animar y sigue al hueso `root` del personaje. Presets *Neutral*, *Galería (fría)* y *Atardecer* en el panel N. |
 | **Rig + Física** | Genera un rig Rigify con el rigger NTE de Gacha Setup (comparte el esqueleto `Bip001-` de Strinova) y aplica la física por constraints. |
 | **Física por Constraints** | Aplica solo la física a un rig ya generado. Sliders *Inercia pelo* / *Inercia ropa* (0 = rígido, 1 = no sigue). |
 
