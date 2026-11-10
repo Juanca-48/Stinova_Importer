@@ -37,6 +37,48 @@ def skin_of(name, fallback):
     return m.group(1) if m else fallback
 
 
+# ---------- node sections (frames) ----------
+SECTION_COLORS = {  # frame tint per kind of section
+    "in": (0.22, 0.22, 0.22), "light": (0.42, 0.36, 0.14), "color": (0.33, 0.2, 0.38),
+    "tex": (0.18, 0.28, 0.42), "out": (0.14, 0.32, 0.18),
+}
+
+
+@contextlib.contextmanager
+def section(nt, label, kind, extra=()):
+    """Put the nodes created inside the block (plus `extra`) in a titled, coloured frame."""
+    before = set(nt.nodes)
+    yield
+    frame(nt, label, kind, [n for n in nt.nodes if n not in before and n.type != "FRAME"] + list(extra))
+
+
+def frame(nt, label, kind, nodes):
+    if not nodes:
+        return None
+    fr = nt.nodes.new("NodeFrame")
+    fr.label, fr.label_size, fr.shrink = label, 20, True
+    fr.use_custom_color, fr.color = True, SECTION_COLORS[kind]
+    for n in nodes:
+        n.parent = fr  # Blender keeps the node's absolute position
+    return fr
+
+
+def arrange_sections(nt, gap=80):
+    """Lay the frames out left to right in creation order (= data flow), so sections never overlap;
+    each section keeps its inner layout and height."""
+    x = None
+    for fr in [n for n in nt.nodes if n.type == "FRAME"]:
+        kids = [n for n in nt.nodes if n.parent == fr]
+        if not kids:
+            continue
+        left = min(n.location_absolute.x for n in kids)
+        right = max(n.location_absolute.x + n.width for n in kids)
+        x = left if x is None else x
+        for n in kids:
+            n.location_absolute = (n.location_absolute.x + x - left, n.location_absolute.y)
+        x += right - left + gap
+
+
 # ---------- node helpers ----------
 def sock(ng, name, io, typ, default=None):
     s = ng.interface.new_socket(name, in_out=io, socket_type=typ)
@@ -122,10 +164,12 @@ def scene_color(nt, name, x, y):
 
 def toon_mix(nt, lit, base, tint, x, y):
     """Lit side = base * light colour, shadow side = base * shadow tint * ambient colour."""
-    light = scene_color(nt, "st_light_pick", x - 200, y + 250)
-    ambient = scene_color(nt, "st_ambient_pick", x - 200, y - 250)
-    shadow = mix_rgb(nt, "MULTIPLY", 1.0, mix_rgb(nt, "MULTIPLY", 1.0, base, tint, x, y - 100), ambient, x + 150, y - 100)
-    return mix_rgb(nt, "MIX", lit, shadow, mix_rgb(nt, "MULTIPLY", 1.0, base, light, x, y + 100), x + 300, y)
+    with section(nt, "Color de luz y ambiente (panel de iluminacion)", "color"):
+        light = scene_color(nt, "st_light_pick", x - 200, y + 250)
+        ambient = scene_color(nt, "st_ambient_pick", x - 200, y - 250)
+    with section(nt, "Mezcla luz / sombra", "color"):
+        shadow = mix_rgb(nt, "MULTIPLY", 1.0, mix_rgb(nt, "MULTIPLY", 1.0, base, tint, x, y - 100), ambient, x + 150, y - 100)
+        return mix_rgb(nt, "MIX", lit, shadow, mix_rgb(nt, "MULTIPLY", 1.0, base, light, x, y + 100), x + 300, y)
 
 
 def shader_out(nt, color, alpha, out_node, x, y):
@@ -157,24 +201,29 @@ def build_toon_group():
     sock(ng, "MatCap Pow", "INPUT", "NodeSocketFloat", 0.0)
     sock(ng, "Emission", "INPUT", "NodeSocketColor", (0, 0, 0, 1))
     nt = ng
-    gi = node(nt, "NodeGroupInput", -900, 0)
+    with section(nt, "Entradas", "in"):
+        gi = node(nt, "NodeGroupInput", -900, 0)
     go = node(nt, "NodeGroupOutput", 900, 0)
-    L = attr(nt, "lightDir", -700, 300)
-    N = vmath(nt, "NORMALIZE", gi.outputs["Normal"], None, -700, 100).outputs[0]
-    ndl = vmath(nt, "DOT_PRODUCT", N, L, -400, 200).outputs["Value"]
-    lit = soft_step(nt, ndl, gi.outputs["Middle Value"], gi.outputs["Softness"], -200, 200)
+    with section(nt, "Luz: N.L con la direccion del sol (lado iluminado)", "light"):
+        L = attr(nt, "lightDir", -700, 300)
+        N = vmath(nt, "NORMALIZE", gi.outputs["Normal"], None, -700, 100).outputs[0]
+        ndl = vmath(nt, "DOT_PRODUCT", N, L, -400, 200).outputs["Value"]
+        lit = soft_step(nt, ndl, gi.outputs["Middle Value"], gi.outputs["Softness"], -200, 200)
+    with section(nt, "UV del MatCap (normal en espacio de camara)", "tex"):
+        vt = node(nt, "ShaderNodeVectorTransform", -400, -250, vector_type="NORMAL", convert_from="WORLD", convert_to="CAMERA")
+        nt.links.new(N, vt.inputs[0])
+        ma = node(nt, "ShaderNodeVectorMath", -200, -250, operation="MULTIPLY_ADD")
+        nt.links.new(vt.outputs[0], ma.inputs[0])
+        ma.inputs[1].default_value = (0.5, 0.5, 0.5)
+        ma.inputs[2].default_value = (0.5, 0.5, 0.5)
+        nt.links.new(ma.outputs[0], go.inputs["MatCap UV"])
     col = toon_mix(nt, lit, gi.outputs["Base Color"], gi.outputs["Shadow Tint"], 100, 100)
-    col = mix_rgb(nt, "ADD", gi.outputs["MatCap Pow"], col, gi.outputs["MatCap"], 450, 100)
-    col = mix_rgb(nt, "ADD", 1.0, col, gi.outputs["Emission"], 600, 100)
-    shader_out(nt, col, gi.outputs["Alpha"], go, 650, -150)
-    # matcap UV = view-space normal * 0.5 + 0.5
-    vt = node(nt, "ShaderNodeVectorTransform", -400, -250, vector_type="NORMAL", convert_from="WORLD", convert_to="CAMERA")
-    nt.links.new(N, vt.inputs[0])
-    ma = node(nt, "ShaderNodeVectorMath", -200, -250, operation="MULTIPLY_ADD")
-    nt.links.new(vt.outputs[0], ma.inputs[0])
-    ma.inputs[1].default_value = (0.5, 0.5, 0.5)
-    ma.inputs[2].default_value = (0.5, 0.5, 0.5)
-    nt.links.new(ma.outputs[0], go.inputs["MatCap UV"])
+    with section(nt, "MatCap y emision", "color"):
+        col = mix_rgb(nt, "ADD", gi.outputs["MatCap Pow"], col, gi.outputs["MatCap"], 450, 100)
+        col = mix_rgb(nt, "ADD", 1.0, col, gi.outputs["Emission"], 600, 100)
+    with section(nt, "Salida (emision + transparencia)", "out", extra=(go,)):
+        shader_out(nt, col, gi.outputs["Alpha"], go, 650, -150)
+    arrange_sections(nt)
     return ng
 
 
@@ -192,42 +241,46 @@ def build_face_group():
     sock(ng, "Softness", "INPUT", "NodeSocketFloat", 0.01)
     sock(ng, "Flip Side", "INPUT", "NodeSocketFloat", 0.0)  # set 1 if shadow lands on the wrong side
     nt = ng
-    gi = node(nt, "NodeGroupInput", -1300, 0)
+    with section(nt, "Entradas", "in"):
+        gi = node(nt, "NodeGroupInput", -1300, 0)
     go = node(nt, "NodeGroupOutput", 900, 0)
-    L = attr(nt, "lightDir", -1100, 400)
-    F = attr(nt, "headForward", -1100, 250)
-    U = attr(nt, "headUp", -1100, 100)
-    # light projected on the head's horizontal plane
-    lu = vmath(nt, "DOT_PRODUCT", L, U, -800, 400).outputs["Value"]
-    su = node(nt, "ShaderNodeVectorMath", -650, 400, operation="SCALE")
-    nt.links.new(U, su.inputs[0])
-    nt.links.new(lu, su.inputs["Scale"])
-    lp = vmath(nt, "SUBTRACT", L, su.outputs[0], -500, 400).outputs[0]
-    lp = vmath(nt, "NORMALIZE", lp, None, -350, 400).outputs[0]
-    f = vmath(nt, "DOT_PRODUCT", F, lp, -200, 400).outputs["Value"]
-    right = vmath(nt, "CROSS_PRODUCT", F, U, -500, 200).outputs[0]
-    r = vmath(nt, "DOT_PRODUCT", right, lp, -200, 200).outputs["Value"]
-    # mirror the SDF horizontally depending on which side the light is on
-    side = math(nt, "GREATER_THAN", r, 0.0, 0, 200)
-    side = math(nt, "ABSOLUTE", math(nt, "SUBTRACT", side, gi.outputs["Flip Side"], 150, 250), None, 300, 250)
-    uv = node(nt, "ShaderNodeUVMap", -500, -100)
-    sep = node(nt, "ShaderNodeSeparateXYZ", -300, -100)
-    nt.links.new(uv.outputs[0], sep.inputs[0])
-    u = sep.outputs["X"]
-    one_minus_2u = math(nt, "MULTIPLY_ADD", u, -2.0, 0, -100)
-    nt.nodes[-1].inputs[2].default_value = 1.0
-    u2 = math(nt, "MULTIPLY_ADD", side, one_minus_2u, 450, -50)
-    nt.links.new(u, nt.nodes[-1].inputs[2])
-    comb = node(nt, "ShaderNodeCombineXYZ", 650, -100)
-    nt.links.new(u2, comb.inputs["X"])
-    nt.links.new(sep.outputs["Y"], comb.inputs["Y"])
-    nt.links.new(comb.outputs[0], go.inputs["SDF UV"])
-    # lit when SDF exceeds threshold (0 = light in front, 1 = light behind)
-    thr = math(nt, "MULTIPLY_ADD", f, -0.5, 0, 450)
-    nt.nodes[-1].inputs[2].default_value = 0.5
-    lit = soft_step(nt, gi.outputs["SDF"], thr, gi.outputs["Softness"], 200, 450)
+    with section(nt, "Vectores: luz y orientacion de la cabeza", "light"):
+        L = attr(nt, "lightDir", -1100, 400)
+        F = attr(nt, "headForward", -1100, 250)
+        U = attr(nt, "headUp", -1100, 100)
+    with section(nt, "Luz proyectada en el plano de la cabeza (delante / lado)", "light"):
+        lu = vmath(nt, "DOT_PRODUCT", L, U, -800, 400).outputs["Value"]
+        su = node(nt, "ShaderNodeVectorMath", -650, 400, operation="SCALE")
+        nt.links.new(U, su.inputs[0])
+        nt.links.new(lu, su.inputs["Scale"])
+        lp = vmath(nt, "SUBTRACT", L, su.outputs[0], -500, 400).outputs[0]
+        lp = vmath(nt, "NORMALIZE", lp, None, -350, 400).outputs[0]
+        f = vmath(nt, "DOT_PRODUCT", F, lp, -200, 400).outputs["Value"]
+        right = vmath(nt, "CROSS_PRODUCT", F, U, -500, 200).outputs[0]
+        r = vmath(nt, "DOT_PRODUCT", right, lp, -200, 200).outputs["Value"]
+    with section(nt, "UV del SDF: espejo segun el lado de la luz", "tex"):
+        side = math(nt, "GREATER_THAN", r, 0.0, 0, 200)
+        side = math(nt, "ABSOLUTE", math(nt, "SUBTRACT", side, gi.outputs["Flip Side"], 150, 250), None, 300, 250)
+        uv = node(nt, "ShaderNodeUVMap", -500, -100)
+        sep = node(nt, "ShaderNodeSeparateXYZ", -300, -100)
+        nt.links.new(uv.outputs[0], sep.inputs[0])
+        u = sep.outputs["X"]
+        one_minus_2u = math(nt, "MULTIPLY_ADD", u, -2.0, 0, -100)
+        nt.nodes[-1].inputs[2].default_value = 1.0
+        u2 = math(nt, "MULTIPLY_ADD", side, one_minus_2u, 450, -50)
+        nt.links.new(u, nt.nodes[-1].inputs[2])
+        comb = node(nt, "ShaderNodeCombineXYZ", 650, -100)
+        nt.links.new(u2, comb.inputs["X"])
+        nt.links.new(sep.outputs["Y"], comb.inputs["Y"])
+        nt.links.new(comb.outputs[0], go.inputs["SDF UV"])
+    with section(nt, "Sombra de la cara: umbral del SDF (0 = luz delante, 1 = detras)", "light"):
+        thr = math(nt, "MULTIPLY_ADD", f, -0.5, 0, 450)
+        nt.nodes[-1].inputs[2].default_value = 0.5
+        lit = soft_step(nt, gi.outputs["SDF"], thr, gi.outputs["Softness"], 200, 450)
     col = toon_mix(nt, lit, gi.outputs["Base Color"], gi.outputs["Shadow Tint"], 400, 150)
-    shader_out(nt, col, gi.outputs["Alpha"], go, 650, -300)
+    with section(nt, "Salida (emision + transparencia)", "out", extra=(go,)):
+        shader_out(nt, col, gi.outputs["Alpha"], go, 650, -300)
+    arrange_sections(nt)
     return ng
 
 
@@ -239,7 +292,8 @@ def build_vectors_gn(sun, emp):
     sock(ng, "Geometry", "INPUT", "NodeSocketGeometry")
     sock(ng, "Geometry", "OUTPUT", "NodeSocketGeometry")
     nt = ng
-    gi = node(nt, "NodeGroupInput", -800, 0)
+    with section(nt, "Entrada", "in"):
+        gi = node(nt, "NodeGroupInput", -800, 0)
     go = node(nt, "NodeGroupOutput", 800, 0)
 
     def info(ob, y):  # objects set on the node itself; modifier object props failed to assign in 5.2
@@ -247,26 +301,30 @@ def build_vectors_gn(sun, emp):
         n.inputs["Object"].default_value = ob
         return n
 
-    li, ho, hf, hu = info(sun, 300), info(emp["Origin"], 0), info(emp["Forward"], -250), info(emp["Up"], -500)
-    rot = node(nt, "FunctionNodeRotateVector", -300, 300)
-    rot.inputs["Vector"].default_value = (0, 0, 1)  # sun shines along its -Z, so +Z points toward the light
-    nt.links.new(li.outputs["Rotation"], rot.inputs["Rotation"])
-    fwd = vmath(nt, "SUBTRACT", hf.outputs["Location"], ho.outputs["Location"], -300, -100)
-    up = vmath(nt, "SUBTRACT", hu.outputs["Location"], ho.outputs["Location"], -300, -350)
-    geo = gi.outputs["Geometry"]
-    for i, (name, val) in enumerate((("lightDir", rot.outputs[0]), ("headForward", fwd.outputs[0]), ("headUp", up.outputs[0]))):
-        st = node(nt, "GeometryNodeStoreNamedAttribute", 0 + i * 220, 0, data_type="FLOAT_VECTOR", domain="POINT")
-        st.inputs["Name"].default_value = name
-        nt.links.new(geo, st.inputs["Geometry"])
-        nt.links.new(val, st.inputs["Value"])
-        geo = st.outputs["Geometry"]
-    nt.links.new(geo, go.inputs["Geometry"])
+    with section(nt, "Objetos: sol (ST_Light) y empties de la cabeza", "light"):
+        li, ho, hf, hu = info(sun, 300), info(emp["Origin"], 0), info(emp["Forward"], -250), info(emp["Up"], -500)
+    with section(nt, "Vectores: direccion de la luz, frente y arriba de la cabeza", "light"):
+        rot = node(nt, "FunctionNodeRotateVector", -300, 300)
+        rot.inputs["Vector"].default_value = (0, 0, 1)  # sun shines along its -Z, so +Z points toward the light
+        nt.links.new(li.outputs["Rotation"], rot.inputs["Rotation"])
+        fwd = vmath(nt, "SUBTRACT", hf.outputs["Location"], ho.outputs["Location"], -300, -100)
+        up = vmath(nt, "SUBTRACT", hu.outputs["Location"], ho.outputs["Location"], -300, -350)
+    with section(nt, "Guardar como atributos (los lee el shader)", "out", extra=(go,)):
+        geo = gi.outputs["Geometry"]
+        for i, (name, val) in enumerate((("lightDir", rot.outputs[0]), ("headForward", fwd.outputs[0]), ("headUp", up.outputs[0]))):
+            st = node(nt, "GeometryNodeStoreNamedAttribute", 0 + i * 220, 0, data_type="FLOAT_VECTOR", domain="POINT")
+            st.inputs["Name"].default_value = name
+            nt.links.new(geo, st.inputs["Geometry"])
+            nt.links.new(val, st.inputs["Value"])
+            geo = st.outputs["Geometry"]
+        nt.links.new(geo, go.inputs["Geometry"])
+    arrange_sections(nt)
     return ng
 
 
 # ---------- scene rig: sun + head empties ----------
 def ensure_rig(arm):
-    # raw FModel skeleton, or the Rigify rig made by "Rig + Fisica"
+    # raw FModel skeleton, or the Rigify rig made by "Generar rig"
     head_bone = next((b for b in ("Bip001-Head", "DEF-spine.006") if b in arm.pose.bones), "Bip001-Head")
     col = bpy.context.scene.collection
     sun = bpy.data.objects.get("ST_Light")
@@ -325,12 +383,14 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
     # second instance only provides the SDF/MatCap UV, so the texture -> group link is not a cycle
     g_uv = node(nt, "ShaderNodeGroup", -500, -350, node_tree=g.node_tree, label="UV only")
     used = [os.path.basename(base_p)]
+    normal, normal_label, extra_tex = [], "Normal", []  # nodes to frame at the end
     if is_face:
         sdf_p = pick(tex_idx, t["FaceShadowMask"], skin)
         if sdf_p:
             sdf = tex(nt, sdf_p, "Non-Color", -200, -250, g_uv.outputs["SDF UV"])
             nt.links.new(sdf.outputs["Color"], g.inputs["SDF"])
             used.append(os.path.basename(sdf_p))
+            extra_tex = [("SDF de la cara (sombra suave)", sdf)]
     else:
         mv = sca.get("MiddleValue", 0.15)
         g.inputs["Middle Value"].default_value = mv if mv > -1 else 0.15
@@ -352,22 +412,34 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
             nt.links.new(nm.outputs[0], g.inputs["Normal"])
             nt.links.new(nm.outputs[0], g_uv.inputs["Normal"])
             used.append(os.path.basename(nrm_p))
+            normal, normal_label = [n_img, sep, inv, comb, nm], "Normal map (DirectX a Blender: canal verde invertido)"
         else:
             geo = node(nt, "ShaderNodeNewGeometry", -60, -150)
             nt.links.new(geo.outputs["Normal"], g.inputs["Normal"])
             nt.links.new(geo.outputs["Normal"], g_uv.inputs["Normal"])
+            normal, normal_label = [geo], "Normal de la geometria (sin normal map)"
         mc_p = pick(tex_idx, t.get("MatCapTexture", ""), skin) if sw.get("NeedMatCap") else None
         if mc_p:
             mc = tex(nt, mc_p, "sRGB", -200, -450, g_uv.outputs["MatCap UV"])
             nt.links.new(mc.outputs["Color"], g.inputs["MatCap"])
             g.inputs["MatCap Pow"].default_value = sca.get("MatCapPow", 0.0)
             used.append(os.path.basename(mc_p))
+            extra_tex = [("MatCap (brillo / reflejo)", mc)]
         # EmissiveColor is a leftover default in ~700 materials; the game only uses it behind the
         # EnableEmissive static switch (otherwise it whites out e.g. Chiyo S105, Aika S207 face).
         # shortcut: applied unmasked; find the emission mask channel if a material glows too much.
         e = cols.get("EmissiveColor") if sw.get("EnableEmissive") else None
         if e:
             g.inputs["Emission"].default_value = (e["R"], e["G"], e["B"], 1)
+    # sections in data-flow order: textures -> computed UVs -> UV-driven textures -> shading -> output
+    frame(nt, "Textura base (color + alpha)", "tex", [base])
+    frame(nt, normal_label, "tex", normal)
+    frame(nt, "UV calculadas (SDF / MatCap)", "light", [g_uv])
+    for label, n in extra_tex:
+        frame(nt, label, "tex", [n])
+    frame(nt, "Toon shading" + (" de la cara (ST Face)" if is_face else " (ST Toon)"), "color", [g])
+    frame(nt, "Salida", "out", [out])
+    arrange_sections(nt)
     translucent = props.get("BlendMode") == "BLEND_Translucent"
     mat.surface_render_method = "BLENDED" if translucent else "DITHERED"
     mat.use_backface_culling = not props.get("TwoSided", False)

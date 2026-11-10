@@ -26,7 +26,7 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
 
     filter_glob: bpy.props.StringProperty(default="*.uemodel;*.fbx", options={"HIDDEN"})
     do_shading: bpy.props.BoolProperty(name="Aplicar Toon Shading", default=True)
-    do_rig: bpy.props.BoolProperty(name="Rig + Fisica", default=True)
+    do_rig: bpy.props.BoolProperty(name="Generar rig", default=True)
 
     def execute(self, context):
         ext = os.path.splitext(self.filepath)[1].lower()
