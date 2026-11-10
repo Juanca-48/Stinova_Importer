@@ -57,6 +57,12 @@ Después actívalo en *Preferences > Add-ons > Strinova Toon Setup*. Cada cambio
 git archive -o strinova_toon.zip HEAD strinova_toon/
 ```
 
+## Modelos con expresiones
+
+Cada skin trae dos modelos 3D: el de partida (`Mesh3D`) y el de lobby (`Mesh3DLobby`). Casi siempre solo el de lobby trae las expresiones faciales (shape keys); con él, Gacha Setup genera los sliders de la cara.
+
+Si importas un `.fbx` guardado fuera de la exportación de FModel, el add-on reconoce el personaje por el nombre de una de sus carpetas (`.../<Personaje>/<Skin>/...`) y usa sus texturas y materiales de la exportación de FModel. Para eso, la carpeta del panel tiene que apuntar a cualquier personaje dentro de esa exportación.
+
 ## Prueba
 
 ```

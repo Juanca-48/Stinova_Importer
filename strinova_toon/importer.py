@@ -3,11 +3,18 @@ shading and rig operators (called through bpy.ops, so this module does not depen
 import bpy, os
 from bpy_extras.io_utils import ImportHelper
 
-def char_dir_from(path):
+
+def char_dir_from(path, current=""):
     # FModel layout: .../Characters/<Name>/<Skin>/Mesh3D/SK_*.uemodel
     parts = os.path.normpath(path).split(os.sep)
     if "Characters" in parts and parts.index("Characters") + 1 < len(parts) - 1:
         return os.sep.join(parts[: parts.index("Characters") + 2])
+    # FBX kept outside the FModel export in a <Name>/<Skin>/... tree: textures and material JSONs
+    # stay in FModel's export, so take <Name>'s folder next to the one already set in the panel
+    chars_root = os.path.dirname(os.path.normpath(current)) if current else ""
+    for p in reversed(parts[:-1]):
+        if chars_root and os.path.isdir(os.path.join(chars_root, p)):
+            return os.path.join(chars_root, p)
     return None  # e.g. an FBX saved elsewhere: keep the folder already set in the panel
 
 
@@ -43,7 +50,7 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
         if not mesh:
             self.report({"ERROR"}, "El archivo no trae una malla con esqueleto")
             return {"CANCELLED"}
-        char_dir = char_dir_from(self.filepath)
+        char_dir = char_dir_from(self.filepath, context.scene.strinova_char_dir)
         if char_dir:
             context.scene.strinova_char_dir = char_dir
         elif self.do_shading:
