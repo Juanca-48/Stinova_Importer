@@ -14,7 +14,7 @@ bl_info = {
 # (lightDir, headForward, headUp).
 # shortcut: shadow colour is a flat tint, not the game's RampID atlas; swap in ramps once exported.
 # shortcut: Mask1/Mask2 are not used yet; their channel meaning is still unverified.
-import bpy, os, re, json, colorsys, mathutils
+import bpy, os, re, json, mathutils
 from math import cos, sin, tau  # imported by name: math() below is a node helper
 from bpy_extras.io_utils import ImportHelper
 
@@ -382,14 +382,6 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
     report[mat.name] = {"tipo": "face" if is_face else "toon", "texturas": used}
 
 
-# (light, ambient) measured on Kanami S001's white boots in the reference videos (linear, vs. base colour)
-LIGHT_PRESETS = {
-    "NEUTRAL": ("Neutral", (1.0, 1.0, 1.0), (1.0, 1.0, 1.0)),
-    "GALERIA": ("Galeria (fria)", (0.76, 0.79, 0.83), (0.45, 0.52, 0.50)),
-    "ATARDECER": ("Atardecer", (0.90, 0.80, 0.74), (0.81, 0.69, 0.52)),
-}
-
-
 # ---------- lighting panel (HSV wheels in the viewport, like Gacha Setup's Genshin panel) ----------
 PANEL = "ST Lighting Panel"  # standalone armature until the character gets a rig, then joined into it
 PICKERS = (("Luz", "st_light_pick", 0.0), ("Ambiente", "st_ambient_pick", 0.30))  # name, scene prop, x offset (m)
@@ -464,11 +456,6 @@ def _reparent(context, ob, parent, bone=None):
 
 def _head_bone(arm):
     return next((b for b in ("DEF-spine.006", "Bip001-Head") if b in arm.data.bones), None)
-
-
-def lighting_arm(scene):
-    """Armature that holds the lighting controls: the character rig once joined, else the panel."""
-    return next((o for o in scene.objects if o.type == "ARMATURE" and "ST Panel" in o.data.bones), None)
 
 
 def create_panel(context, near, char_arm):
@@ -573,8 +560,13 @@ def bind_lighting(context, arm, char_arm):
     sun_w = _mesh_obj("WGT-ST_sun", circ + rays_out + rays_in, None, None, None,
                       edges=[(i, (i + 1) % 24) for i in range(24)] + [(24 + i, 32 + i) for i in range(8)])
     pb = arm.pose.bones
-    for b in ("ST Panel",) + tuple(f"ST {n} centro" for n, _, _ in PICKERS):
-        arm.data.bones[b].hide = True
+    helpers = ("ST Panel",) + tuple(f"ST {n} centro" for n, _, _ in PICKERS)
+    for p in pb:
+        if p.name.startswith("ST "):
+            hidden = p.name in helpers
+            p.bone.hide = hidden
+            p.hide = hidden  # Blender 5: pose-mode visibility lives on the pose bone
+            p.use_custom_shape_bone_size = False  # widgets in metres, not scaled by the 3 cm bones
     for name, prop, _ in PICKERS:
         p, s = pb[f"ST {name}"], pb[f"ST {name} valor"]
         for bone_ in (p, s):
@@ -640,11 +632,109 @@ def attach_panel(context, pan, arm):
         _reparent(context, pan, arm, "root")
 
 
-def apply_light_preset(arm, key):
-    for (name, _, _), rgb in zip(PICKERS, LIGHT_PRESETS[key][1:]):
-        h, s, v = colorsys.rgb_to_hsv(*rgb)
-        arm.pose.bones[f"ST {name}"].location = (s * R * cos(tau * h), 0.0, s * R * sin(tau * h))
-        arm.pose.bones[f"ST {name} valor"].location = (0.0, 0.0, v * R)
+# ---------- outline (inverted hull) ----------
+OUTLINE_SUFFIX = " Outline"
+OUTLINE_TINT = (0.19, 0.19, 0.28, 1.0)  # BaseColor of the game's outline materials (MI_*_Outline), times BaseMap
+OUTLINE_WIDTH = 0.002  # metres; ~1.5 px at full-body 1080p like the reference videos
+# shortcut: width is constant in world space (the game's looks screen-space) and the hull follows
+# the mesh normals, not the smoothed normals packed in COL0.rgb; revisit if close-ups look too thick
+# or hard edges show cracks.
+
+
+def build_outline_gn():
+    """Duplicate the deformed mesh, push it out along the normal by width * COL0.alpha (the game's
+    outline mask: 0 on face/eyes), flip it and give each face its material's outline slot."""
+    ng = bpy.data.node_groups.get("ST Outline")
+    if ng:
+        return ng
+    ng = bpy.data.node_groups.new("ST Outline", "GeometryNodeTree")
+    sock(ng, "Geometry", "INPUT", "NodeSocketGeometry")
+    sock(ng, "Geometry", "OUTPUT", "NodeSocketGeometry")
+    w = sock(ng, "Grosor", "INPUT", "NodeSocketFloat", OUTLINE_WIDTH)
+    w.min_value, w.max_value, w.subtype = 0.0, 0.02, "DISTANCE"
+    sock(ng, "Primer slot de contorno", "INPUT", "NodeSocketInt", 0)
+    nt = ng
+    gi = node(nt, "NodeGroupInput", -1000, 0)
+    go = node(nt, "NodeGroupOutput", 900, 0)
+    col = node(nt, "GeometryNodeInputNamedAttribute", -1000, -300, data_type="FLOAT_COLOR")
+    col.inputs["Name"].default_value = "COL0"
+    sep = node(nt, "FunctionNodeSeparateColor", -800, -300)
+    nt.links.new(col.outputs["Attribute"], sep.inputs[0])
+    mask = sep.outputs["Alpha"]
+    keep = node(nt, "GeometryNodeDeleteGeometry", -600, 100, domain="FACE")
+    nt.links.new(gi.outputs["Geometry"], keep.inputs["Geometry"])
+    nt.links.new(math(nt, "LESS_THAN", mask, 0.01, -700, -100), keep.inputs["Selection"])
+    nrm = node(nt, "GeometryNodeInputNormal", -600, -200)
+    off = node(nt, "ShaderNodeVectorMath", -400, -200, operation="SCALE")
+    nt.links.new(nrm.outputs["Normal"], off.inputs[0])
+    nt.links.new(math(nt, "MULTIPLY", gi.outputs["Grosor"], mask, -550, -350), off.inputs["Scale"])
+    sp = node(nt, "GeometryNodeSetPosition", -200, 100)
+    nt.links.new(keep.outputs["Geometry"], sp.inputs["Geometry"])
+    nt.links.new(off.outputs[0], sp.inputs["Offset"])
+    flip = node(nt, "GeometryNodeFlipFaces", 0, 100)
+    nt.links.new(sp.outputs["Geometry"], flip.inputs["Mesh"])
+    idx = node(nt, "GeometryNodeInputMaterialIndex", 0, -150)
+    smi = node(nt, "GeometryNodeSetMaterialIndex", 200, 100)
+    nt.links.new(flip.outputs["Mesh"], smi.inputs["Geometry"])
+    nt.links.new(math(nt, "ADD", idx.outputs[0], gi.outputs["Primer slot de contorno"], 100, -150), smi.inputs["Material Index"])
+    join = node(nt, "GeometryNodeJoinGeometry", 500, 0)
+    nt.links.new(smi.outputs["Geometry"], join.inputs[0])
+    nt.links.new(gi.outputs["Geometry"], join.inputs[0])
+    nt.links.new(join.outputs[0], go.inputs["Geometry"])
+    return ng
+
+
+def outline_material(src):
+    """Dark tint of the source material's BaseMap; only the hull's camera-facing side shows."""
+    name = src.name + OUTLINE_SUFFIX
+    m = bpy.data.materials.get(name) or bpy.data.materials.new(name)
+    m.use_nodes = True
+    nt = m.node_tree
+    nt.nodes.clear()
+    out = node(nt, "ShaderNodeOutputMaterial", 600, 0)
+    base = next((n.image for n in src.node_tree.nodes if n.type == "TEX_IMAGE" and n.image
+                 and n.image.colorspace_settings.name == "sRGB"), None) if src.node_tree else None
+    tint = node(nt, "ShaderNodeRGB", -400, -150)
+    tint.outputs[0].default_value = OUTLINE_TINT
+    colour, alpha = tint.outputs[0], None
+    if base:
+        tex = node(nt, "ShaderNodeTexImage", -400, 150, image=base)
+        colour = mix_rgb(nt, "MULTIPLY", 1.0, tex.outputs["Color"], tint.outputs[0], -150, 50)
+        alpha = tex.outputs["Alpha"]
+    em = node(nt, "ShaderNodeEmission", 100, 50)
+    nt.links.new(colour, em.inputs["Color"])
+    # hide the hull's back side (inverted hull) also in Cycles, where backface culling is ignored
+    geo = node(nt, "ShaderNodeNewGeometry", 100, 300)
+    cut = geo.outputs["Backfacing"]
+    if alpha is not None:  # alpha-clipped parts (hair tips, lace) get no outline where they are cut
+        cut = math(nt, "MAXIMUM", cut, math(nt, "LESS_THAN", alpha, 0.333, 150, -150), 250, 200)
+    tr = node(nt, "ShaderNodeBsdfTransparent", 100, -100)
+    mx = node(nt, "ShaderNodeMixShader", 400, 0)
+    nt.links.new(cut, mx.inputs[0])
+    nt.links.new(em.outputs[0], mx.inputs[1])
+    nt.links.new(tr.outputs[0], mx.inputs[2])
+    nt.links.new(mx.outputs[0], out.inputs["Surface"])
+    m.use_backface_culling = True
+    m.surface_render_method = "DITHERED"
+    return m
+
+
+def ensure_outline(obj):
+    me = obj.data
+    while me.materials and me.materials[-1] and me.materials[-1].name.endswith(OUTLINE_SUFFIX):
+        me.materials.pop()
+    originals = list(me.materials)
+    for src in originals:
+        me.materials.append(outline_material(src))
+    mod = obj.modifiers.get("ST Outline") or obj.modifiers.new("ST Outline", "NODES")
+    mod.node_group = build_outline_gn()
+    outline_input(mod, "Primer slot de contorno").value = len(originals)
+    return mod
+
+
+def outline_input(mod, name):
+    # Blender 5.x: modifier inputs live in mod.properties.inputs.<identifier>.value
+    return getattr(mod.properties.inputs, mod.node_group.interface.items_tree[name].identifier)
 
 
 def run(obj, char_dir):
@@ -660,6 +750,8 @@ def run(obj, char_dir):
     report = {}
     for slot in obj.material_slots:
         mat = slot.material
+        if mat.name.endswith(OUTLINE_SUFFIX):
+            continue
         base_name = re.sub(r"\.\d{3}$", "", mat.name)  # Blender adds .001 on name clashes (re-imports, FBX)
         jp = pick(json_idx, base_name, skin_of(base_name, mesh_skin))
         if not jp:
@@ -667,6 +759,7 @@ def run(obj, char_dir):
             continue
         with open(jp, encoding="utf-8") as fh:
             setup_material(mat, json.load(fh), tex_idx, mesh_skin, face_g, toon_g, report)
+    ensure_outline(obj)
     return report
 
 
@@ -683,51 +776,107 @@ PHYS_COLLECTIONS = ("Hair", "Clothes")
 NOT_PHYSICS = {"SocketADS"}  # gameplay socket Gacha Setup files under Clothes
 
 
-INERTIA_PROPS = {"Hair": ("st_hair_inertia", 0.5), "Clothes": ("st_cloth_inertia", 0.3)}
+INERTIA_PROPS = {  # group: (rig property, default influence, panel label)
+    # 20% stiffer than Gacha Setup's 0.7 / 0.4: theirs felt too loose on Strinova's chains
+    "Hair": ("st_hair_inertia", 0.56, "Inercia pelo"),
+    "Bangs": ("st_bangs_inertia", 0.28, "Inercia flequillo"),  # bangs sway half as much as the back hair
+    "Clothes": ("st_cloth_inertia", 0.32, "Inercia ropa"),
+    "Breast": ("st_breast_inertia", 0.2, "Inercia pecho"),
+}
 
 
 def apply_inertia(rig):
-    """Constraint 'physics' that reacts live without playback. Each Hair/Clothes chain
-    root copies part of the rotation of a hidden helper (STI-*) parented to the rig's
-    root, so when the head/torso turns the chain only partly follows and seems to hang.
-    Gacha Setup's Damped Track (bone tracks its own child) is not used: on this rig it
-    makes dependency cycles, twists chains at rest and hits Rigify MCH bones."""
+    """Gacha Setup style 'physics': each Hair/Clothes chain bone (and Strinova's chest_l/r chains)
+    gets a Damped Track towards its own child. That is a dependency cycle on purpose: Blender
+    resolves it with the previous evaluation, so strands trail behind the body while animating,
+    which reads as inertia. Unlike Gacha's button it only touches those bones (theirs also hit
+    Rigify MCH/IK bones on this rig). Trade-off: the result depends on the frames evaluated
+    before, so jumping around the timeline or rendering single frames can differ from playback."""
     bpy.context.view_layer.objects.active = rig
     bpy.ops.object.mode_set(mode="OBJECT")
     colls = rig.data.collections_all
-    owner = {b.name: c for c in PHYS_COLLECTIONS if c in colls for b in colls[c].bones if b.name not in NOT_PHYSICS}
-    roots = [n for n in owner if not (rig.data.bones[n].parent and rig.data.bones[n].parent.name in owner)]
+    group = {b.name: c for c in PHYS_COLLECTIONS if c in colls for b in colls[c].bones if b.name not in NOT_PHYSICS}
+    group.update({b.name: "Breast" for b in rig.data.bones if re.fullmatch(r"chest_[lr]_\d+", b.name)})
+    # Bangs / front locks: hair chains whose tip ends in front of the eyes (rig faces -Y). By where
+    # the strand ends, not its name or root: Kanami's hair_f_m2 is rooted behind but falls over the face.
+    eyes = [b.head_local.y for b in rig.data.bones if "eye" in b.name.lower() and "ball" in b.name.lower()]
+    head = rig.data.bones.get("DEF-spine.006")
+    face_y = min(eyes) if eyes else (head.head_local.y - 0.05 if head else None)
+    if face_y is not None:
+        hair = {n for n, g in group.items() if g == "Hair"}
+        tip_y = {}
+        for n in hair:  # tip of the chain below each bone
+            t = rig.data.bones[n]
+            while True:
+                kids = sorted((c for c in t.children if c.name in hair), key=lambda c: c.name)
+                if not kids:
+                    break
+                t = kids[0]
+            tip_y[n] = t.tail_local.y
+        for n in hair:
+            r = rig.data.bones[n]
+            while r.parent and r.parent.name in hair:
+                r = r.parent
+            if tip_y[r.name] < face_y + 0.01:
+                group[n] = "Bangs"
     for c in PHYS_COLLECTIONS:
         if c in colls:
             colls[c].is_visible = False  # keep only the controllers in view; the sliders drive these chains
-    for c, (prop, default) in INERTIA_PROPS.items():
+    for g, (prop, default, label) in INERTIA_PROPS.items():
         if prop not in rig:
             rig[prop] = default
-        rig.id_properties_ui(prop).update(min=0.0, max=1.0, description=f"Cuanto se resiste {c} a seguir el movimiento")
+        rig.id_properties_ui(prop).update(min=0.0, max=1.0, description=f"{label}: cuanto se retrasa y arrastra al animar")
 
+    for pb in rig.pose.bones:  # drop previous versions (Copy Rotation / anchored Damped Track)
+        c = pb.constraints.get("ST Inertia")
+        if c:
+            pb.driver_remove('constraints["ST Inertia"].influence')
+            pb.constraints.remove(c)
+    old = [b.name for b in rig.data.bones if b.name.startswith(("STI-", "STA-"))]
+    if old:
+        bpy.ops.object.mode_set(mode="EDIT")
+        for n in old:
+            rig.data.edit_bones.remove(rig.data.edit_bones[n])
+        bpy.ops.object.mode_set(mode="OBJECT")
+    if "ST Inertia" in colls:
+        rig.data.collections.remove(colls["ST Inertia"])
+
+    # Damped Track aims the bone's Y axis at its child. UEFormat imports Strinova's chain bones
+    # pointing elsewhere (not at the child), so tracking would swing every bone ~90 deg at rest.
+    # Point each one at its child first (tips continue the chain); heads stay, so the mesh, bound
+    # to this same rest pose, does not move.
+    kids_of = {n: sorted(ch.name for ch in rig.data.bones[n].children if ch.name in group) for n in group}
     bpy.ops.object.mode_set(mode="EDIT")
     eb = rig.data.edit_bones
-    hidden = colls.get("ST Inertia") or rig.data.collections.new("ST Inertia")
-    hidden.is_visible = False
-    for n in roots:
-        h = eb.get("STI-" + n) or eb.new("STI-" + n)
-        src = eb[n]
-        h.head, h.tail, h.roll = src.head.copy(), src.tail.copy(), src.roll
-        h.parent = eb.get("root")
-        h.use_deform = False
-        hidden.assign(h)
-    bpy.ops.object.mode_set(mode="POSE")
-    for n in roots:
-        pb = rig.pose.bones[n]
-        c = pb.constraints.get("ST Inertia") or pb.constraints.new("COPY_ROTATION")
-        c.name, c.target, c.subtarget = "ST Inertia", rig, "STI-" + n
-        pb.driver_remove(f'constraints["ST Inertia"].influence')
+    for n in group:
+        b = eb[n]
+        if kids_of[n]:
+            aim = eb[kids_of[n][0]].head - b.head
+        elif b.parent and b.parent.name in group:
+            aim = (b.head - b.parent.head).normalized() * max(b.length, 0.02)
+        else:
+            continue
+        if aim.length > 1e-4:
+            b.tail = b.head + aim
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+    chains = 0
+    for n, g in group.items():
+        kids = kids_of[n]
+        if not kids:
+            continue  # tip of a chain
+        if g == "Breast" and kids_of[kids[0]]:
+            continue  # chest: one cycle per side, on the weighted bone; chained cycles made one side jitter
+        p = rig.data.bones[n].parent
+        chains += not (p and p.name in group)
+        c = rig.pose.bones[n].constraints.new("DAMPED_TRACK")
+        c.name, c.target, c.subtarget, c.track_axis = "ST Inertia", rig, kids[0], "TRACK_Y"
         drv = c.driver_add("influence").driver
         drv.type = "AVERAGE"
-        t = drv.variables.new().targets[0]
-        t.id, t.data_path = rig, f'["{INERTIA_PROPS[owner[n]][0]}"]'
-    bpy.ops.object.mode_set(mode="OBJECT")
-    return len(roots)
+        v = drv.variables.new()
+        v.type = "SINGLE_PROP"
+        v.targets[0].id, v.targets[0].data_path = rig, f'["{INERTIA_PROPS[g][0]}"]'
+    return chains
 
 
 def target_rig(context):
@@ -735,24 +884,6 @@ def target_rig(context):
     if ob and ob.type == "MESH":
         ob = ob.find_armature()
     return ob if ob and ob.type == "ARMATURE" and "Hair" in ob.data.collections_all else None
-
-
-class STRINOVA_OT_light_preset(bpy.types.Operator):
-    bl_idname = "strinova.light_preset"
-    bl_label = "Preset de iluminacion"
-    bl_description = "Ajusta el color de luz y de ambiente del toon shading"
-    bl_options = {"REGISTER", "UNDO"}
-
-    preset: bpy.props.EnumProperty(items=[(k, v[0], "") for k, v in LIGHT_PRESETS.items()])
-
-    @classmethod
-    def poll(cls, context):
-        return lighting_arm(context.scene) is not None
-
-    def execute(self, context):
-        apply_light_preset(lighting_arm(context.scene), self.preset)
-        context.view_layer.update()
-        return {"FINISHED"}
 
 
 class STRINOVA_OT_inertia(bpy.types.Operator):
@@ -769,6 +900,57 @@ class STRINOVA_OT_inertia(bpy.types.Operator):
         n = apply_inertia(target_rig(context))
         self.report({"INFO"}, f"{n} cadenas con inercia")
         return {"FINISHED"}
+
+
+def fix_finger_curl(rig):
+    """Gacha's NTE rigger rolls each finger so it curls the way it already bends at rest. Strinova's
+    T-pose fingers bend slightly up, so the master's scale-curl (driver (1-sy)*pi on the MCH *_drv
+    bones) closed them backwards. A positive curl moves the tip towards the bone's local +Z; with
+    the palms facing down in the rest pose that must point down, otherwise flip the driver sign."""
+    drivers = rig.animation_data.drivers if rig.animation_data else []
+    flipped = []
+    for side in (".L", ".R"):
+        for f in ("f_index", "f_middle", "f_ring", "f_pinky", "thumb"):  # thumb: Gacha doesn't mirror it for .R
+            b = rig.data.bones.get(f"ORG-{f}.01{side}")
+            if not b:
+                continue
+            backwards = (rig.matrix_world.to_3x3() @ b.matrix_local.to_3x3()).col[2].z > 0
+            for d in drivers:
+                if d.data_path.startswith(f'pose.bones["MCH-{f}.') and f'_drv{side}"]' in d.data_path:
+                    expr = d.driver.expression.lstrip("-")
+                    d.driver.expression = f"-{expr}" if backwards else expr  # set, not toggle: safe to rerun
+            if backwards:
+                flipped.append(f + side)
+    return flipped
+
+
+def fix_breasts(context, rig):
+    """Rigify's breast.L/R controls move DEF-breast, which no vertex is weighted to: Strinova skins
+    the chest to its own chest_l_* / chest_r_* chains, left hanging from the spine. Move the
+    breast bones onto each chain (Rigify parks them ~14 cm in front of the body, a bad pivot)
+    and hang the chain from ORG-breast, which copies the control."""
+    chains = {}
+    for b in rig.data.bones:
+        m = re.fullmatch(r"chest_([lr])_\d+", b.name)
+        if m:
+            chains.setdefault(m.group(1).upper(), []).append(b.name)
+    sides = [s for s in chains if f"ORG-breast.{s}" in rig.data.bones]
+    if not sides:
+        return []
+    context.view_layer.objects.active = rig
+    bpy.ops.object.mode_set(mode="EDIT")
+    eb = rig.data.edit_bones
+    for s in sides:
+        names = sorted(chains[s])
+        root = next(eb[n] for n in names if not (eb[n].parent and eb[n].parent.name in names))
+        tip = eb[names[-1]].tail.copy()
+        for n in (f"breast.{s}", f"ORG-breast.{s}", f"DEF-breast.{s}"):
+            if n in eb:
+                eb[n].head, eb[n].tail = root.head.copy(), tip
+        root.use_connect = False
+        root.parent = eb[f"ORG-breast.{s}"]
+    bpy.ops.object.mode_set(mode="OBJECT")
+    return sides
 
 
 class STRINOVA_OT_rig(bpy.types.Operator):
@@ -814,6 +996,14 @@ class STRINOVA_OT_rig(bpy.types.Operator):
         if not rig or "DEF-spine.006" not in rig.pose.bones:
             self.report({"ERROR"}, "Gacha Setup no genero el rig (revisa la consola)")
             return {"CANCELLED"}
+        # Strinova's weights are authored for rigid bones. Rigify's B-bones (8-10 segments) bend the
+        # mesh differently and, since Gacha's NTE rigger flips the roll of consecutive spine bones,
+        # tilting the chest twisted the torso. One segment deforms like the game.
+        for b in rig.data.bones:
+            if b.name.startswith("DEF-"):
+                b.bbone_segments = 1
+        fix_finger_curl(rig)
+        fix_breasts(context, rig)
         if pan:
             pan.parent = None
             pan.matrix_world = pan_mw
@@ -934,25 +1124,22 @@ class STRINOVA_PT_panel(bpy.types.Panel):
         col.label(text="Carpeta del personaje (FModel):")
         col.prop(context.scene, "strinova_char_dir", text="")
         col.operator(STRINOVA_OT_setup.bl_idname, icon="SHADING_RENDERED")
-        sc = context.scene
-        if lighting_arm(sc):
-            box = col.box()
-            box.label(text="Iluminacion (Pose Mode, coleccion Iluminacion):", icon="COLOR")
-            box.label(text="Ruedas: tono/saturacion  Barras: valor  Sol: direccion")
-            row = box.row(align=True)
-            for key, (label, _, _) in LIGHT_PRESETS.items():
-                row.operator(STRINOVA_OT_light_preset.bl_idname, text=label).preset = key
+        mesh = target_mesh(context)
+        omod = mesh.modifiers.get("ST Outline") if mesh else None
+        if omod and omod.node_group:
+            col.prop(outline_input(omod, "Grosor"), "value", text="Grosor contorno")
         col.operator(STRINOVA_OT_rig.bl_idname, icon="ARMATURE_DATA")
         col.operator(STRINOVA_OT_inertia.bl_idname, icon="FORCE_WIND")
         rig = target_rig(context)
-        if rig and "st_hair_inertia" in rig:
-            col.prop(rig, '["st_hair_inertia"]', text="Inercia pelo", slider=True)
-            col.prop(rig, '["st_cloth_inertia"]', text="Inercia ropa", slider=True)
+        if rig:
+            for prop, _, label in INERTIA_PROPS.values():
+                if prop in rig:
+                    col.prop(rig, f'["{prop}"]', text=label, slider=True)
         if not target_mesh(context):
             col.label(text="Selecciona la malla o su armature", icon="INFO")
 
 
-classes = (STRINOVA_OT_import, STRINOVA_OT_setup, STRINOVA_OT_light_preset, STRINOVA_OT_rig, STRINOVA_OT_inertia, STRINOVA_PT_panel)
+classes = (STRINOVA_OT_import, STRINOVA_OT_setup, STRINOVA_OT_rig, STRINOVA_OT_inertia, STRINOVA_PT_panel)
 
 
 def register():
