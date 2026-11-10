@@ -391,15 +391,21 @@ LIGHT_PRESETS = {
 
 
 # ---------- lighting panel (HSV wheels in the viewport, like Gacha Setup's Genshin panel) ----------
-PANEL = "ST Lighting Panel"
-PICKERS = (("Luz", "st_light_pick", 0.0), ("Ambiente", "st_ambient_pick", 3.2))  # bone, scene prop, x offset
+PANEL = "ST Lighting Panel"  # standalone armature until the character gets a rig, then joined into it
+PICKERS = (("Luz", "st_light_pick", 0.0), ("Ambiente", "st_ambient_pick", 0.30))  # name, scene prop, x offset (m)
+R = 0.08  # wheel radius in metres; drivers divide by it so the shader works with a unit wheel
 VALUE_MAX = 1.5  # value slider range (1 = texture colour, >1 overexposes)
+SLIDER_DX = 0.14
+SUN_DIST = 0.8  # default distance of the sun handle from the head
+COLL = "Iluminacion"
 
 
-def _mesh_obj(name, verts, faces, parent, loc, mat=None):
+def _mesh_obj(name, verts, faces, parent, loc, mat=None, edges=None):
     me = bpy.data.meshes.get(name) or bpy.data.meshes.new(name)
     me.clear_geometry()
-    me.from_pydata(verts, [] if faces else [(i, (i + 1) % len(verts)) for i in range(len(verts))], faces or [])
+    if edges is None:
+        edges = [] if faces else [(i, (i + 1) % len(verts)) for i in range(len(verts))]
+    me.from_pydata(verts, edges, faces or [])
     if mat and not me.materials:
         me.materials.append(mat)
     ob = bpy.data.objects.get(name) or bpy.data.objects.new(name, me)
@@ -433,115 +439,221 @@ def _emission_mat(name, build):
 def _wheel_colour(nt, sep):
     one = node(nt, "ShaderNodeValue", -500, -300)
     one.outputs[0].default_value = 1.0
-    return hsv_wheel(nt, sep.outputs["X"], sep.outputs["Z"], one.outputs[0], -500, 0)
+    x = math(nt, "DIVIDE", sep.outputs["X"], R, -600, 100)
+    z = math(nt, "DIVIDE", sep.outputs["Z"], R, -600, -100)
+    return hsv_wheel(nt, x, z, one.outputs[0], -500, 0)
 
 
 def _ramp_colour(nt, sep):
-    v = math(nt, "DIVIDE", sep.outputs["Z"], VALUE_MAX, -500, 0)
+    v = math(nt, "DIVIDE", sep.outputs["Z"], VALUE_MAX * R, -500, 0)
     cc = node(nt, "ShaderNodeCombineColor", -300, 0)
     for i in range(3):
         nt.links.new(v, cc.inputs[i])
     return cc.outputs[0]
 
 
-def ensure_lighting_panel(context, near):
-    """Armature with an HSV wheel + value slider per colour. Drivers copy each picker's local
-    position into a scene property (no Python expressions, so no auto-run prompt); the toon
-    shader reads it through a View Layer attribute and converts it to RGB."""
+def _reparent(context, ob, parent, bone=None):
+    """Change parent keeping the world transform."""
+    mw = ob.matrix_world.copy()
+    ob.parent = parent
+    ob.parent_type = "BONE" if bone else "OBJECT"
+    ob.parent_bone = bone or ""
+    context.view_layer.update()
+    ob.matrix_world = mw
+
+
+def _head_bone(arm):
+    return next((b for b in ("DEF-spine.006", "Bip001-Head") if b in arm.data.bones), None)
+
+
+def lighting_arm(scene):
+    """Armature that holds the lighting controls: the character rig once joined, else the panel."""
+    return next((o for o in scene.objects if o.type == "ARMATURE" and "ST Panel" in o.data.bones), None)
+
+
+def create_panel(context, near, char_arm):
+    """Standalone armature: an HSV wheel + value slider per colour and the sun handle."""
     sc = context.scene
-    pan = bpy.data.objects.get(PANEL)
-    if not pan:
-        arm = bpy.data.armatures.new(PANEL)
-        arm.display_type = "WIRE"
-        pan = bpy.data.objects.new(PANEL, arm)
-        sc.collection.objects.link(pan)
-        bb = [near.matrix_world @ mathutils.Vector(c) for c in near.bound_box]
-        pan.location = (max(v.x for v in bb) + 0.4, 0.0, max(v.z for v in bb) * 0.8)
-        pan.scale = (0.1, 0.1, 0.1)
-        pan.show_in_front = True
-        prev = context.view_layer.objects.active
-        context.view_layer.objects.active = pan
-        bpy.ops.object.mode_set(mode="EDIT")
-        eb = arm.edit_bones
-        root = eb.new("Panel")
-        root.head, root.tail = (0, 0, 0), (0, 0.3, 0)
-        for name, _, ox in PICKERS:
-            for bname, head in ((f"{name} centro", (ox, 0, 0)), (name, (ox, 0, 0)), (f"{name} valor", (ox + 1.4, 0, 0))):
-                b = eb.new(bname)
-                b.head, b.tail, b.parent = head, (head[0], 0.3, head[2]), root
-        bpy.ops.object.mode_set(mode="POSE")
-        ring = _mesh_obj("WGT-ST_picker", _circle(0.12), None, None, None)
-        bar = _mesh_obj("WGT-ST_slider", [(-0.25, 0, 0), (0.25, 0, 0)], None, None, None)
-        wheel_mat = _emission_mat("ST Wheel", _wheel_colour)
-        ramp_mat = _emission_mat("ST Value Ramp", _ramp_colour)
-        for name, _, ox in PICKERS:
-            arm.bones[f"{name} centro"].hide = True
-            p = pan.pose.bones[name]
-            p.custom_shape, p.lock_location[1] = ring, True
-            p.lock_rotation = p.lock_scale = (True, True, True)
-            c = p.constraints.new("LIMIT_DISTANCE")
-            c.target, c.subtarget, c.limit_mode = pan, f"{name} centro", "LIMITDIST_INSIDE"
-            c.distance = 1.0 * pan.scale.x  # world units; shader clamps saturation anyway
-            s = pan.pose.bones[f"{name} valor"]
-            s.custom_shape, s.lock_location[0], s.lock_location[1] = bar, True, True
-            s.lock_rotation = s.lock_scale = (True, True, True)
-            lim = s.constraints.new("LIMIT_LOCATION")
-            lim.owner_space, lim.use_min_z, lim.use_max_z, lim.min_z, lim.max_z = "LOCAL", True, True, 0.0, VALUE_MAX
-            n = 64
-            disc = _mesh_obj(f"ST Rueda {name}", [(0, 0, 0)] + _circle(1.0, n), [(0, i + 1, (i + 1) % n + 1) for i in range(n)], pan, (ox, 0.05, 0), wheel_mat)
-            track = _mesh_obj(f"ST Barra {name}", [(-0.08, 0, 0), (0.08, 0, 0), (0.08, 0, VALUE_MAX), (-0.08, 0, VALUE_MAX)], [(0, 1, 2, 3)], pan, (ox + 1.4, 0.05, 0), ramp_mat)
-            label = bpy.data.objects.get(f"ST Texto {name}") or bpy.data.objects.new(f"ST Texto {name}", bpy.data.curves.new(f"ST Texto {name}", "FONT"))
-            label.data.body, label.data.size, label.data.align_x = name, 0.45, "CENTER"
-            label.parent, label.location, label.rotation_euler = pan, (ox + 0.4, 0.05, 1.25), (1.5708, 0, 0)
-            label.hide_select = label.hide_render = True
-            for ob in (disc, track, label):
-                if ob.name not in sc.collection.objects:
-                    sc.collection.objects.link(ob)
-        arm.bones["Panel"].hide = True
-        bpy.ops.object.mode_set(mode="OBJECT")
-        context.view_layer.objects.active = prev
-        apply_light_preset(pan, "NEUTRAL")
-    attach_panel(context, pan, near.find_armature())
+    arm = bpy.data.armatures.new(PANEL)
+    arm.display_type = "WIRE"
+    pan = bpy.data.objects.new(PANEL, arm)
+    sc.collection.objects.link(pan)
+    bb = [near.matrix_world @ mathutils.Vector(c) for c in near.bound_box]
+    pan.location = (max(v.x for v in bb) + 0.4, 0.0, max(v.z for v in bb) * 0.8)
+    pan.show_in_front = True
+    hb = _head_bone(char_arm)
+    head = char_arm.matrix_world @ char_arm.data.bones[hb].head_local if hb else pan.location
+    to_light = mathutils.Euler((0.9, 0.0, -0.5)).to_matrix() @ mathutils.Vector((0, 0, 1))  # front, above, to the side
+    sun_at = head + to_light * SUN_DIST - pan.location
+    prev = context.view_layer.objects.active
+    context.view_layer.objects.active = pan
+    bpy.ops.object.mode_set(mode="EDIT")
+    eb = arm.edit_bones
+
+    def bone(name, head, parent=None, length=0.03):
+        b = eb.new(name)
+        b.head, b.tail, b.parent = head, (head[0], head[1] + length, head[2]), parent
+        return b
+
+    root = bone("ST Panel", (0, 0, 0))
+    for name, _, ox in PICKERS:
+        bone(f"ST {name} centro", (ox, 0, 0), root)
+        bone(f"ST {name}", (ox, 0, 0), root)
+        bone(f"ST {name} valor", (ox + SLIDER_DX, 0, 0), root)
+    bone("ST Sol", tuple(sun_at), None, 0.05)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    context.view_layer.objects.active = prev
+    wheel_mat = _emission_mat("ST Wheel", _wheel_colour)
+    ramp_mat = _emission_mat("ST Value Ramp", _ramp_colour)
+    n = 64
+    for name, _, ox in PICKERS:
+        disc = _mesh_obj(f"ST Rueda {name}", [(0, 0, 0)] + _circle(R, n), [(0, i + 1, (i + 1) % n + 1) for i in range(n)], pan, (ox, 0.005, 0), wheel_mat)
+        h = VALUE_MAX * R
+        track = _mesh_obj(f"ST Barra {name}", [(-0.006, 0, 0), (0.006, 0, 0), (0.006, 0, h), (-0.006, 0, h)], [(0, 1, 2, 3)], pan, (ox + SLIDER_DX, 0.005, 0), ramp_mat)
+        label = bpy.data.objects.get(f"ST Texto {name}") or bpy.data.objects.new(f"ST Texto {name}", bpy.data.curves.new(f"ST Texto {name}", "FONT"))
+        label.data.body, label.data.size, label.data.align_x = name, 0.035, "CENTER"
+        label.parent, label.location, label.rotation_euler = pan, (ox + 0.03, 0.005, R + 0.04), (1.5708, 0, 0)
+        label.hide_select = label.hide_render = True
+        for ob in (disc, track, label):
+            if ob.name not in sc.collection.objects:
+                sc.collection.objects.link(ob)
+    for name, _, _ in PICKERS:
+        pan.pose.bones[f"ST {name} valor"].location = (0, 0, R)  # value 1 until a preset is applied
+    return pan
+
+
+def merge_panel(context, pan, rig):
+    """Join the panel into the character rig (like Gacha Setup does with Genshin's panel), so
+    lights animate in the same action as the character."""
+    ui = list(pan.children)
+    ui_mw = {c: c.matrix_world.copy() for c in ui}
+    locs = {pb.name: pb.location.copy() for pb in pan.pose.bones}
+    pan_mw = pan.matrix_world.copy()
+    pan.parent = None
+    pan.matrix_world = pan_mw
+    if not pan.users_collection:
+        context.scene.collection.objects.link(pan)
+    context.view_layer.update()
+    for o in context.view_layer.objects:
+        o.select_set(False)
+    pan.hide_set(False)
+    pan.select_set(True)
+    rig.select_set(True)
+    context.view_layer.objects.active = rig
+    bpy.ops.object.join()
+    bpy.ops.object.mode_set(mode="EDIT")
+    eb = rig.data.edit_bones
+    for b in ("ST Panel", "ST Sol"):
+        eb[b].parent = eb.get("root")
+    bpy.ops.object.mode_set(mode="OBJECT")
+    for name, loc in locs.items():
+        rig.pose.bones[name].location = loc
+    context.view_layer.update()
+    for c in ui:
+        c.parent, c.parent_type, c.parent_bone = rig, "BONE", "ST Panel"
+        context.view_layer.update()
+        c.matrix_world = ui_mw[c]
+    coll = rig.data.collections_all.get(COLL) or rig.data.collections.new(COLL)
+    for b in rig.data.bones:
+        if b.name.startswith("ST "):
+            for c in list(b.collections):
+                c.unassign(b)
+            coll.assign(b)
+    coll.is_visible = True
+
+
+def bind_lighting(context, arm, char_arm):
+    """Pose settings, limits, drivers and sun constraints for the lighting controls in `arm`."""
+    sc = context.scene
+    ring = _mesh_obj("WGT-ST_picker", _circle(0.012), None, None, None)
+    bar = _mesh_obj("WGT-ST_slider", [(-0.02, 0, 0), (0.02, 0, 0)], None, None, None)
+    circ = _circle(0.03, 24)
+    rays_out = [(0.06 * cos(tau * i / 8), 0, 0.06 * sin(tau * i / 8)) for i in range(8)]
+    rays_in = [(0.04 * cos(tau * i / 8), 0, 0.04 * sin(tau * i / 8)) for i in range(8)]
+    sun_w = _mesh_obj("WGT-ST_sun", circ + rays_out + rays_in, None, None, None,
+                      edges=[(i, (i + 1) % 24) for i in range(24)] + [(24 + i, 32 + i) for i in range(8)])
+    pb = arm.pose.bones
+    for b in ("ST Panel",) + tuple(f"ST {n} centro" for n, _, _ in PICKERS):
+        arm.data.bones[b].hide = True
     for name, prop, _ in PICKERS:
+        p, s = pb[f"ST {name}"], pb[f"ST {name} valor"]
+        for bone_ in (p, s):
+            for c in list(bone_.constraints):
+                bone_.constraints.remove(c)
+        p.custom_shape, p.lock_location = ring, (False, True, False)
+        p.lock_rotation = p.lock_scale = (True, True, True)
+        c = p.constraints.new("LIMIT_DISTANCE")
+        c.target, c.subtarget, c.limit_mode, c.distance = arm, f"ST {name} centro", "LIMITDIST_INSIDE", R
+        s.custom_shape, s.lock_location = bar, (True, True, False)
+        s.lock_rotation = s.lock_scale = (True, True, True)
+        lim = s.constraints.new("LIMIT_LOCATION")
+        lim.owner_space, lim.use_min_z, lim.use_max_z, lim.min_z, lim.max_z = "LOCAL", True, True, 0.0, VALUE_MAX * R
         if prop not in sc:
             sc[prop] = (0.0, 0.0, 1.0)
-        for i, (bone, ch) in enumerate(((name, "LOC_X"), (name, "LOC_Z"), (f"{name} valor", "LOC_Z"))):
+        for i, (bone, ch) in enumerate(((p.name, "LOC_X"), (p.name, "LOC_Z"), (s.name, "LOC_Z"))):
             sc.driver_remove(f'["{prop}"]', i)
             drv = sc.driver_add(f'["{prop}"]', i).driver
-            drv.type = "AVERAGE"
+            drv.type, drv.expression = "SCRIPTED", f"var / {R}"  # simple expression: no auto-run needed
             t = drv.variables.new()
-            t.type = "TRANSFORMS"
-            t.targets[0].id, t.targets[0].bone_target = pan, bone
+            t.name, t.type = "var", "TRANSFORMS"
+            t.targets[0].id, t.targets[0].bone_target = arm, bone
             t.targets[0].transform_type, t.targets[0].transform_space = ch, "LOCAL_SPACE"
+    sol = pb["ST Sol"]
+    sol.custom_shape = sun_w
+    sol.lock_rotation = sol.lock_scale = (True, True, True)
+    # light shines from the sun handle towards the head; the GN modifier reads ST_Light's rotation
+    sun = bpy.data.objects.get("ST_Light")
+    hb = _head_bone(char_arm)
+    if sun and hb:
+        for c in list(sun.constraints):
+            sun.constraints.remove(c)
+        cl = sun.constraints.new("COPY_LOCATION")
+        cl.name, cl.target, cl.subtarget = "ST Sol", arm, "ST Sol"
+        dt = sun.constraints.new("DAMPED_TRACK")
+        dt.name, dt.target, dt.subtarget, dt.track_axis = "ST Cabeza", char_arm, hb, "TRACK_NEGATIVE_Z"
+
+
+def _is_rig(arm):
+    return "DEF-spine.006" in arm.data.bones and "root" in arm.data.bones
+
+
+def ensure_lighting_panel(context, near):
+    """Lighting controls: HSV wheels (Luz/Ambiente) + value sliders + sun handle. Drivers copy each
+    picker's position into a scene property and the toon shader converts it to RGB."""
+    char_arm = near.find_armature()
+    if "ST Panel" in char_arm.data.bones:
+        bind_lighting(context, char_arm, char_arm)
+        return char_arm
+    pan = bpy.data.objects.get(PANEL) or create_panel(context, near, char_arm)
+    if _is_rig(char_arm):
+        merge_panel(context, pan, char_arm)
+        bind_lighting(context, char_arm, char_arm)
+        return char_arm
+    attach_panel(context, pan, char_arm)
+    bind_lighting(context, pan, char_arm)
     return pan
 
 
 def attach_panel(context, pan, arm):
-    """Make the lighting panel follow the character's root bone, keeping where it is now."""
-    if not (pan and arm and "root" in arm.data.bones):
-        return
-    if (pan.parent, pan.parent_type, pan.parent_bone) == (arm, "BONE", "root"):
-        return
-    mw = pan.matrix_world.copy()
-    pan.parent, pan.parent_type, pan.parent_bone = arm, "BONE", "root"
-    context.view_layer.update()
-    pan.matrix_world = mw
+    """Make the standalone panel follow the character's root bone, keeping where it is now."""
+    if pan and arm and "root" in arm.data.bones and (pan.parent, pan.parent_bone) != (arm, "root"):
+        _reparent(context, pan, arm, "root")
 
 
-def apply_light_preset(pan, key):
+def apply_light_preset(arm, key):
     for (name, _, _), rgb in zip(PICKERS, LIGHT_PRESETS[key][1:]):
         h, s, v = colorsys.rgb_to_hsv(*rgb)
-        pan.pose.bones[name].location = (s * cos(tau * h), 0.0, s * sin(tau * h))
-        pan.pose.bones[f"{name} valor"].location = (0.0, 0.0, v)
+        arm.pose.bones[f"ST {name}"].location = (s * R * cos(tau * h), 0.0, s * R * sin(tau * h))
+        arm.pose.bones[f"ST {name} valor"].location = (0.0, 0.0, v * R)
 
 
 def run(obj, char_dir):
-    ensure_lighting_panel(bpy.context, obj)
     arm = obj.find_armature()
     mesh_skin = skin_of(obj.name, "")
     tex_idx = index_files(char_dir, ".png")
     json_idx = index_files(char_dir, ".json")
     sun, emp = ensure_rig(arm)
+    ensure_lighting_panel(bpy.context, obj)  # after ensure_rig: it aims ST_Light with the sun handle
     toon_g, face_g, gn = build_toon_group(), build_face_group(), build_vectors_gn(sun, emp)
     mod = obj.modifiers.get("ST Light Vectors") or obj.modifiers.new("ST Light Vectors", "NODES")
     mod.node_group = gn
@@ -587,7 +699,7 @@ def apply_inertia(rig):
     roots = [n for n in owner if not (rig.data.bones[n].parent and rig.data.bones[n].parent.name in owner)]
     for c in PHYS_COLLECTIONS:
         if c in colls:
-            colls[c].is_visible = True
+            colls[c].is_visible = False  # keep only the controllers in view; the sliders drive these chains
     for c, (prop, default) in INERTIA_PROPS.items():
         if prop not in rig:
             rig[prop] = default
@@ -635,10 +747,10 @@ class STRINOVA_OT_light_preset(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return PANEL in bpy.data.objects
+        return lighting_arm(context.scene) is not None
 
     def execute(self, context):
-        apply_light_preset(bpy.data.objects[PANEL], self.preset)
+        apply_light_preset(lighting_arm(context.scene), self.preset)
         context.view_layer.update()
         return {"FINISHED"}
 
@@ -698,14 +810,14 @@ class STRINOVA_OT_rig(bpy.types.Operator):
         finally:
             for c in pan_colls:
                 c.objects.link(pan)
-        if pan:
-            pan.parent = None
-            pan.matrix_world = pan_mw
-            attach_panel(context, pan, obj.find_armature())  # follow the new rig's root
         rig = obj.find_armature()
         if not rig or "DEF-spine.006" not in rig.pose.bones:
             self.report({"ERROR"}, "Gacha Setup no genero el rig (revisa la consola)")
             return {"CANCELLED"}
+        if pan:
+            pan.parent = None
+            pan.matrix_world = pan_mw
+            ensure_lighting_panel(context, obj)  # joins the panel into the new rig
         n = apply_inertia(rig)
         self.report({"INFO"}, f"Rig listo: {rig.name}, {n} cadenas con fisica por constraints")
         return {"FINISHED"}
@@ -823,10 +935,10 @@ class STRINOVA_PT_panel(bpy.types.Panel):
         col.prop(context.scene, "strinova_char_dir", text="")
         col.operator(STRINOVA_OT_setup.bl_idname, icon="SHADING_RENDERED")
         sc = context.scene
-        if PANEL in bpy.data.objects:
+        if lighting_arm(sc):
             box = col.box()
-            box.label(text="Iluminacion: mueve los selectores del panel", icon="COLOR")
-            box.label(text="(Pose Mode: rueda = tono/saturacion, barra = valor)")
+            box.label(text="Iluminacion (Pose Mode, coleccion Iluminacion):", icon="COLOR")
+            box.label(text="Ruedas: tono/saturacion  Barras: valor  Sol: direccion")
             row = box.row(align=True)
             for key, (label, _, _) in LIGHT_PRESETS.items():
                 row.operator(STRINOVA_OT_light_preset.bl_idname, text=label).preset = key

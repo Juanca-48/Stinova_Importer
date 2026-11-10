@@ -12,7 +12,7 @@ Panel **Strinova** en el viewport 3D (tecla N):
 |---|---|
 | **Importar personaje** | Importa un `.uemodel` (UEFormat) o `.fbx`. Detecta la carpeta del personaje y, si está marcado, aplica shading y rig en el mismo paso. |
 | **Aplicar Toon Shading** | Reconstruye los materiales a partir de los JSON y PNG de FModel (toon con luz del sol, cara con SDF, normal map, matcap). Crea `ST_Light` y los empties de la cabeza. |
-| **Panel de iluminación** | Lo crea el shading junto al personaje (`ST Lighting Panel`): dos ruedas HSV, **Luz** (lado iluminado) y **Ambiente** (sombra). En Pose Mode, la posición del selector en la rueda da el tono y la saturación, y la barra da el valor. Se puede animar y sigue al hueso `root` del personaje. Presets *Neutral*, *Galería (fría)* y *Atardecer* en el panel N. |
+| **Controles de iluminación** | Los crea el shading junto al personaje y, al generar el rig, pasan a ser parte de él (colección de huesos *Iluminacion*), así que se animan en la misma acción que el personaje. **Ruedas HSV** *Luz* (lado iluminado) y *Ambiente* (sombra): la posición del selector da tono y saturación, y la barra, el valor. **Sol** (`ST Sol`): la luz llega desde donde esté este control hacia la cabeza, y mueve las sombras del cuerpo y de la cara. Todo sigue al hueso `root`. Presets *Neutral*, *Galería (fría)* y *Atardecer* en el panel N. |
 | **Rig + Física** | Genera un rig Rigify con el rigger NTE de Gacha Setup (comparte el esqueleto `Bip001-` de Strinova) y aplica la física por constraints. |
 | **Física por Constraints** | Aplica solo la física a un rig ya generado. Sliders *Inercia pelo* / *Inercia ropa* (0 = rígido, 1 = no sigue). |
 
