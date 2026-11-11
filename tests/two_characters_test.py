@@ -28,7 +28,8 @@ try:
     for m, r in zip(meshes, rigs):
         assert "DEF-spine.006" in r.data.bones, f"{m.name}: sin rig"
         assert any(c.name == "ST Inertia" for pb in r.pose.bones for c in pb.constraints), f"{m.name}: sin fisica"
-        missing = {g.name for g in m.vertex_groups} - {b.name for b in r.data.bones}
+        # "ST <bone>" groups are not weights: they mark an accessory for its show toggle (ST Ocultar <bone>)
+        missing = {g.name for g in m.vertex_groups if not g.name.startswith("ST ")} - {b.name for b in r.data.bones}
         assert not missing, f"{m.name}: grupos de vertices sin hueso en su rig: {sorted(missing)[:5]}"
         groups = {n.node_tree for s in m.material_slots if s.material for n in s.material.node_tree.nodes if n.type == "GROUP"}
         assert groups and None not in groups, f"{m.name}: materiales sin node group"
