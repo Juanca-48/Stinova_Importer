@@ -2,7 +2,7 @@
 constraint 'physics' for hair, clothes and chest."""
 import bpy, re, contextlib
 from .common import target_mesh
-from . import shading, face
+from . import shading, face, accessory
 
 # ---------- rig + physics ----------
 PHYS_COLLECTIONS = ("Hair", "Clothes")
@@ -258,6 +258,8 @@ class STRINOVA_OT_rig(bpy.types.Operator):
             face.add_gaze(context, rig)
             face.arrange_face(context, rig, obj)
             face.add_face_bones(rig, obj)
+            if not accessory.add_existing(rig, obj):  # masks with their own bone (Eika S111: mask_bone)
+                accessory.add_headgear(context, rig, obj)  # else Eika's masks hang from hair_tt_*
             # head follows Gacha's head-controller (the target in front of the face) from the start;
             # the toggle stays on the gear bone (plate-settings) to turn it off
             settings = rig.pose.bones.get("plate-settings")

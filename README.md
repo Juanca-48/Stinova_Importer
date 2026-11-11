@@ -27,6 +27,14 @@ El botón **Versión de papel** del panel (propiedad `st_paper` del rig) cambia 
 
 Sin su personaje 3D en la escena, la versión de papel se importa sola y sin rig.
 
+## Accesorios (máscaras, sombreros)
+
+Para mover un accesorio por separado o quitarlo de escena. Cada accesorio tiene además un interruptor **Mostrar <accesorio>** en el panel (propiedad `st_show_<hueso>` del rig, animable) que lo oculta en viewport y render, con su contorno. Cada uno tiene un hueso en la colección **Accesorios** (una máscara pequeña, triángulo invertido con dos círculos, delante de la pieza). Es hijo de la cabeza: sigue al personaje, pero se puede mover, girar o escalar a 0 para quitarlo, y se anima como cualquier hueso.
+
+- **Con hueso propio** (`mask_bone`, `maskA_L/R_bone`... en Fragrans, Kanami S211–S215, MoBai S206–S210): el control se crea solo al importar.
+- **Máscaras de Eika** (S001, S101, S103, S106, S107...): cuelgan de sus huesos `hair_tt_*` (*tou tao*, cubrecabeza). Al importar se crea `ACC-Mascara`, padre de esos huesos e hijo de la cabeza; los pesos no cambian. En S111 la máscara ya tiene `mask_bone`.
+- **Sin hueso propio** (la mayoría de sombreros, y máscaras como la de Aika S001, que cuelga de un hueso de pelo y se movía con su física): selecciona la malla, entra en Edit Mode, selecciona la pieza (L sobre ella) y pulsa **Crear hueso de accesorio** en el panel. La pieza pasa a moverse solo con su hueso (`ACC-<nombre>`), que cuelga del hueso del cuerpo que la movía (la cabeza).
+
 ## Varios personajes en una escena
 
 Cada personaje tiene su propio sol (`ST_Light <malla>`), sus empties de la cabeza y su panel de iluminación: dos personajes se pueden sombrear distinto (uno en interior y otro en exterior). Los sliders de física son propiedades de cada rig: el panel N muestra los del personaje seleccionado, y también están en *Object Properties > Custom Properties* del rig.
@@ -42,6 +50,7 @@ Cada área vive en su propio módulo, para que un cambio en una no rompa otra:
 | `strinova_toon/importer.py` | Importar `.uemodel` / `.fbx` y detectar la carpeta de FModel. Llama al shading y al rig por sus botones, sin importar su código |
 | `strinova_toon/rig.py` | Rig con el rigger NTE de Gacha Setup, arreglos sobre él (B-Bones, dedos, pecho) y física de pelo, ropa y pecho |
 | `strinova_toon/paper.py` | Versión de papel unida al rig del 3D y el cambio entre las dos |
+| `strinova_toon/accessory.py` | Huesos de accesorios (máscaras, sombreros) y su botón |
 | `strinova_toon/face.py` | Control de mirada y secciones de los sliders de la cara |
 | `strinova_toon/shading.py` | Materiales toon, sol y empties de la cabeza, panel de iluminación y contorno |
 | `strinova_toon/common.py` | Utilidades que usan los tres (`target_mesh`) |
