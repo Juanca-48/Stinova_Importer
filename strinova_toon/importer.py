@@ -20,8 +20,11 @@ def char_dir_from(path, current=""):
 
 
 def skin_folder(path):
-    """'S001'-style skin folder in the path, or None."""
-    return next((p for p in reversed(os.path.normpath(path).split(os.sep)) if re.fullmatch(r"S\d{3}", p)), None)
+    """The model's skin folder: 'S001' in FModel's export, or the folder holding Mesh2D/Mesh3D* in an
+    FBX tree renamed by skin name (fbx/Kanami/Ruiseñor/Mesh3D/...). None if neither."""
+    parts = os.path.normpath(path).split(os.sep)
+    s = next((p for p in reversed(parts) if re.fullmatch(r"S\d{3}", p)), None)
+    return s or next((parts[i - 1] for i in range(len(parts) - 1, 0, -1) if re.match(r"Mesh[23]D", parts[i])), None)
 
 
 def paper_path(path, char_dir):
@@ -31,15 +34,29 @@ def paper_path(path, char_dir):
     dirs = [os.path.join(os.path.dirname(os.path.dirname(path)), "Mesh2D")]
     if skin and char_dir:
         dirs.append(os.path.join(char_dir, skin, "Mesh2D"))
-    for d in dirs:
-        found = sorted(f for ext in ("fbx", "uemodel") for f in glob.glob(os.path.join(d, "**", f"*.{ext}"), recursive=True))
-        if found:
-            return found[0]
-    return None
+    return next(filter(None, (first_model(d, recursive=True) for d in dirs)), None)
+
+
+def first_model(folder, recursive=False):
+    pattern = os.path.join(folder, "**" if recursive else "", "*.{}")
+    found = sorted(f for ext in ("fbx", "uemodel") for f in glob.glob(pattern.format(ext), recursive=recursive))
+    return found[0] if found else None
+
+
+def models_in(folder):
+    """(3D model, paper model) of a skin folder, or of one of its Mesh* folders. The lobby model
+    (Mesh3DLobby, also spelled Mesh3DLobbby / Mesh3D_Lobby...) goes first: it carries the expressions."""
+    folder = os.path.normpath(folder)
+    if re.match(r"(?i)mesh[23]d", os.path.basename(folder)):
+        folder = os.path.dirname(folder)
+    subs = sorted((d for d in os.listdir(folder) if re.match(r"(?i)mesh3d", d) and os.path.isdir(os.path.join(folder, d))),
+                  key=lambda d: not re.search(r"(?i)lo", d[6:]))
+    model = next(filter(None, (first_model(os.path.join(folder, d)) for d in subs)), None)
+    return model, first_model(os.path.join(folder, "Mesh2D"), recursive=True)
 
 
 def collection_name(path, char_dir):
-    """'<Character> <Skin>' from the file path (e.g. 'Flavia S001'), else the file name."""
+    """'<Character> <Skin>' from the file path (e.g. 'Flavia S001', 'Kanami Ruiseñor'), else the file name."""
     skin = skin_folder(path)
     char = os.path.basename(char_dir) if char_dir else None
     return " ".join(x for x in (char, skin) if x) or os.path.splitext(os.path.basename(path))[0]
@@ -93,10 +110,13 @@ def gather_leftovers(context, coll, before_objs, before_colls):
 class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
     bl_idname = "strinova.import_character"
     bl_label = "Importar personaje"
-    bl_description = "Importa un .uemodel (UEFormat) o .fbx del personaje y opcionalmente aplica shading y rig"
+    bl_description = ("Importa un .uemodel (UEFormat) o .fbx del personaje y opcionalmente aplica shading y rig. "
+                      "Con una carpeta de skin (sin elegir archivo) importa su modelo 3D y su version de papel")
     bl_options = {"REGISTER", "UNDO"}
 
     filter_glob: bpy.props.StringProperty(default="*.uemodel;*.fbx", options={"HIDDEN"})
+    # the file browser fills it with the folder it shows: used when no file is picked
+    directory: bpy.props.StringProperty(subtype="DIR_PATH", options={"HIDDEN", "SKIP_SAVE"})
     do_shading: bpy.props.BoolProperty(name="Aplicar Toon Shading", default=True)
     do_rig: bpy.props.BoolProperty(name="Generar rig", default=True)
     do_paper: bpy.props.BoolProperty(name="Incluir version de papel", default=False)
@@ -108,6 +128,20 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
         return super().invoke(context, event)
 
     def execute(self, context):
+        if not os.path.isfile(self.filepath):
+            # no file picked: the browser sends its folder, sometimes with leftover text from the name field
+            folder = next((d for d in (self.filepath, self.directory, os.path.dirname(self.filepath)) if d and os.path.isdir(d)), None)
+            print(f"[Strinova] sin archivo: filepath={self.filepath!r} directory={self.directory!r} -> {folder!r}")
+            if not folder:
+                self.report({"ERROR"}, f"No existe: {self.filepath}")
+                return {"CANCELLED"}
+            self.filepath = folder
+        if os.path.isdir(self.filepath):  # a skin folder: its 3D model (lobby first) and its paper version
+            model, paper_model = models_in(self.filepath)
+            if not (model or paper_model):
+                self.report({"ERROR"}, "La carpeta no tiene Mesh3D ni Mesh2D con un .fbx o .uemodel")
+                return {"CANCELLED"}
+            self.filepath, self.do_paper = model or paper_model, bool(model and paper_model)
         ext = os.path.splitext(self.filepath)[1].lower()
         # hasattr(bpy.ops.uf, ...) is always True, so check the registered operator type instead
         if ext == ".uemodel" and not hasattr(bpy.types, "UF_OT_import_uemodel"):

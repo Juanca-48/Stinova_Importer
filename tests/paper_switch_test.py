@@ -3,6 +3,7 @@
 Run (from the repo folder):
     blender -b --python tests/paper_switch_test.py -- "<3D .uemodel>" "<Mesh2D .uemodel>" [render.png]
     blender -b --python tests/paper_switch_test.py -- "<3D .uemodel>" -     (both in one import)
+    blender -b --python tests/paper_switch_test.py -- "<skin folder>" -     (the folder: both found in it)
 Exits with code 1 if any check fails. With a render path it also renders the posed 3D and paper versions.
 """
 import bpy, sys, traceback, math

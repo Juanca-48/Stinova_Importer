@@ -252,6 +252,7 @@ class STRINOVA_OT_rig(bpy.types.Operator):
             fix_finger_curl(rig)
             fix_breasts(context, rig)
             face.add_gaze(context, rig)
+            face.add_blink(context, rig, obj)  # before arrange_face, which lays its slider out
             face.arrange_face(context, rig, obj)
             face.add_face_bones(rig, obj)
             if not accessory.add_existing(rig, obj):  # masks with their own bone (Eika S111: mask_bone)
