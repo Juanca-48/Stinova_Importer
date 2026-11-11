@@ -377,6 +377,9 @@ def ensure_rig(obj, arm):
         mw = e.matrix_world.copy()
         mw.translation = head + mathutils.Vector(off)
         e.matrix_world = mw
+        # inputs of the ST Light Vectors modifier, nothing to grab: disabled in viewport (survives
+        # Alt+H). Tested: the modifier still reads them as the head moves; re-enable in the Outliner.
+        e.hide_viewport = True
         empties[name] = e
     return sun, empties
 

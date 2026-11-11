@@ -93,6 +93,8 @@ Casi todos los esqueletos de Strinova no traen deformadores de cara (solo los gl
 
 **Seguidor de cabeza**: el rig sale con el `head-controller` de Gacha activo (la cabeza apunta a ese control delante de la cara). Se apaga con *Use Head Controller* en el engranaje sobre la cabeza (`plate-settings`).
 
+**Parpadeo**: los modelos que cierran cada ojo con su propio shape key (`biyan_L` / `biyan_R`, o `eye_C_smile_L` / `_R` en la familia de párpados `upEye_C` / `downEye_C`, que baja el superior y sube el inferior a la vez) y no tienen uno para los dos reciben un slider extra, `CTRL-ST Parpadeo`, en el bloque *Ambos* de Ojos: cierra los dos ojos a la vez y los guiños de cada lado siguen funcionando. Los bloques *Derecha* / *Izquierda* de ojos, pupilas y cejas se colocan midiendo hacia qué lado mueve cada shape key (no todos los modelos usan `_L` para el mismo lado), así cada bloque queda, visto de frente, del lado de la cara que mueve.
+
 **Mirada**: en los personajes con globos oculares (`eye_l/r_ball_01`) se añade el control *Mirada* delante de la cara, que sigue a la cabeza, con un objetivo por ojo (*Mirada.L/R*) para ajustar cada ojo por separado.
 
 Si importas un `.fbx` guardado fuera de la exportación de FModel, el add-on reconoce el personaje por el nombre de una de sus carpetas (`.../<Personaje>/<Skin>/Mesh3D/...`; la carpeta de la skin puede ser `S001` o el nombre de la skin, como `Kanami/Ruiseñor/`, y da nombre a la colección) y usa sus texturas y materiales de la exportación de FModel. Para eso, la carpeta del panel tiene que apuntar a cualquier personaje dentro de esa exportación.
