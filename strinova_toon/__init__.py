@@ -15,9 +15,9 @@ bl_info = {
 #   common.py    helpers shared by all three
 if "bpy" in locals():  # add-on reload: refresh the submodules too (import_module also loads new ones)
     import importlib
-    for _n in ("common", "shading", "face", "rig", "paper", "importer"):
+    for _n in ("common", "shading", "face", "accessory", "rig", "paper", "importer"):
         importlib.reload(importlib.import_module(f".{_n}", __package__))
-from . import common, shading, face, rig, paper, importer
+from . import common, shading, face, accessory, rig, paper, importer
 import bpy
 
 
@@ -51,6 +51,12 @@ class STRINOVA_PT_panel(bpy.types.Panel):
                 body.prop(shading.mod_input(omod, "Grosor"), "value", text="Grosor contorno")
             if arm and paper.PAPER_PROP in arm:  # animatable: keyframe it to swap in one frame
                 body.prop(arm, f'["{paper.PAPER_PROP}"]', text="Version de papel", icon="FILE_IMAGE")
+            if arm:
+                for k in sorted(k for k in arm.keys() if k.startswith(accessory.SHOW)):  # one per accessory
+                    label = k[len(accessory.SHOW):].removeprefix(accessory.PREFIX)
+                    body.prop(arm, f'["{k}"]', text=f"Mostrar {label}", icon="HIDE_OFF")
+            if arm:  # greyed out until a piece is selected in Edit Mode
+                body.operator(accessory.STRINOVA_OT_accessory.bl_idname, icon="BONE_DATA")
         if arm and rig.PHYSICS_PROP in arm:
             body.separator()
             body.prop(arm, f'["{rig.PHYSICS_PROP}"]', text="Fisica")  # checkbox
@@ -63,7 +69,7 @@ class STRINOVA_PT_panel(bpy.types.Panel):
             col.label(text="Selecciona la malla o su armature", icon="INFO")
 
 
-classes = importer.classes + shading.classes + rig.classes + (STRINOVA_PT_panel,)
+classes = importer.classes + shading.classes + rig.classes + accessory.classes + (STRINOVA_PT_panel,)
 
 
 def register():
