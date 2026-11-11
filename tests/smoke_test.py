@@ -147,6 +147,19 @@ try:
     print(f"[smoke] boca: {len(split['Boca'])} (abren + fonemas), {len(split['Labios'])} solo labios")
     assert split["Boca"] == {b for b in mouth if keys[b][1] in opens} | phonemes, "Boca: deben ir las que abren la boca y los fonemas"
     assert split["Labios"] == {b for b in mouth if keys[b][1] not in opens}, "Labios: deben ir las que no abren la boca"
+    if face.BLINK in rig.pose.bones:  # blink: closes both eyes, each wink slider still works alone
+        blink = rig.pose.bones[face.BLINK]
+        names = [d.data_path.split('"')[1] for d in mesh.data.shape_keys.animation_data.drivers
+                 if any(v.name == "parpadeo" for v in d.driver.variables)]
+        blink.location.z = next(c.max_z for c in blink.constraints if c.type == "LIMIT_LOCATION")
+        rig.update_tag()
+        bpy.context.view_layer.update()
+        closed = [mesh.data.shape_keys.key_blocks[n].value for n in names]
+        blink.location.z = 0
+        rig.update_tag()
+        bpy.context.view_layer.update()
+        print(f"[smoke] parpadeo cierra {names}: {closed}")
+        assert len(names) == 2 and min(closed) > 0.99, "el parpadeo no cierra los dos ojos"
     joints = [g.name for g in mesh.vertex_groups if g.name.endswith("_SkinJNT") and not g.name.startswith("Facial_Master")]
     ctrls = [b.name for b in rig.data.bones if any(c.name in ("Cara: Huesos", "Cara: Boca interior") for c in b.collections)]
     print(f"[smoke] huesos faciales: {len(joints)}, con control: {len(ctrls)}")

@@ -179,12 +179,12 @@ def side_of(key):
     return m.group(1) if m else ""
 
 
-def section_layout(name, bones, keys):
+def section_layout(name, bones, sides):
     """({slider: (dx, dz)}, [(sub-label, dx, dz)], width, [(sub-label or None, sliders)]) from the
     section's top-left corner; the last item lists the blocks that get an inner frame."""
     groups = {s: [] for s, _ in SIDES}
     for b in bones:
-        groups[side_of(keys[b][1]) if name in SIDED else ""].append(b)
+        groups[sides[b] if name in SIDED else ""].append(b)
     if not (groups["L"] or groups["R"]):  # one plain grid
         pos = {b: ((i % COLS) * DX, -PLAIN_DROP - (i // COLS) * DY) for i, b in enumerate(bones)}
         return pos, [], (min(len(bones), COLS) - 1) * DX, [(None, bones)]
@@ -224,6 +224,91 @@ def text_widget(text):
     return bpy.data.objects.new(name, me)
 
 
+def slider_sides(rig, mesh, keys):
+    """{slider: 'L' / 'R' / ''}. The name says whether a key is one-sided (biyan_L), but not which
+    side: in the mph48_biyan_L family _L moves the character's left, in the upEye_C_L family its
+    right. So the side is measured: where the key moves the mesh, left (+X) or right of the face."""
+    sk = mesh.data.shape_keys
+    n = len(mesh.data.vertices)
+    m = np.array(rig.matrix_world.inverted() @ mesh.matrix_world)
+    root = rig.data.bones.get("Face-Root")
+    mid = root.head_local.x if root else 0.0
+
+    def x_of(name):
+        k = sk.key_blocks[name]
+        a, b = np.empty(n * 3), np.empty(n * 3)
+        k.data.foreach_get("co", a)
+        k.relative_key.data.foreach_get("co", b)
+        d = np.linalg.norm((a - b).reshape(-1, 3), axis=1)
+        moved = d > 0.0005
+        if not moved.any():
+            return None
+        x = (m[0, :3] @ a.reshape(-1, 3)[moved].T) + m[0, 3]
+        return float(np.average(x, weights=d[moved])) - mid
+
+    out = {}
+    for b, (_, key) in keys.items():
+        side = "" if b == BLINK else side_of(key)
+        x = x_of(key) if side else None
+        out[b] = side if x is None or abs(x) < 0.002 else ("L" if x > 0 else "R")
+    return out
+
+
+BLINK = "CTRL-ST Parpadeo"
+CLOSE_EYE = (  # keys that close one eye, by preference: biyan (闭眼: biyan_L, biyanR, mph48_biyan_L), else
+    re.compile(r"(^|_)biyan_?([lr])$"),  # eye_C_smile_L (upEye_C / downEye_C family: both lids at once,
+    re.compile(r"^eye_c_smile_([lr])$"),  # measured: upper lid -5 mm, lower +3 mm)
+)
+
+
+def add_blink(context, rig, mesh):
+    """Models that close each eye with its own key (biyan_L / biyan_R, or eye_C_smile_L / _R) and have no key for both get
+    a blink slider: it drives both keys on top of their own sliders (driver value = own + blink,
+    up to 1), so winks still work. Returns False when the model has no such pair or already blinks."""
+    keys = slider_keys(mesh)
+    if BLINK in rig.data.bones or not keys:
+        return False
+    found = [{} for _ in CLOSE_EYE]  # per pattern: side -> (slider, key)
+    for b, (_, key) in keys.items():
+        if section_of(key) == "Ojos" and not side_of(key) and re.search(r"(?i)biyan|blink|close", key):
+            return False  # it already has a blink
+        k = re.sub(r"^(el_|eb_|mth_)?(mph\d+_)?", "", key.lower())
+        for pat, sides in zip(CLOSE_EYE, found):
+            m = pat.search(k)
+            if m:
+                sides.setdefault(m.group(m.lastindex), (b, key))
+    close = next((s for s in found if set(s) == {"l", "r"}), None)
+    if not close:
+        return False
+    template = close["l"][0]
+    context.view_layer.objects.active = rig
+    bpy.ops.object.mode_set(mode="EDIT")
+    eb = rig.data.edit_bones
+    e = eb.new(BLINK)
+    e.head, e.tail, e.roll, e.parent = eb[template].head, eb[template].tail, eb[template].roll, eb[template].parent
+    e.use_deform = False
+    bpy.ops.object.mode_set(mode="OBJECT")
+    src, pb = rig.pose.bones[template], rig.pose.bones[BLINK]
+    pb.lock_location, pb.lock_rotation, pb.lock_scale = src.lock_location, src.lock_rotation, src.lock_scale
+    travel = SLIDER_TRAVEL
+    for c in src.constraints:
+        if c.type == "LIMIT_LOCATION":
+            n = pb.constraints.new("LIMIT_LOCATION")
+            for attr in ("use_min_x", "use_max_x", "use_min_y", "use_max_y", "use_min_z", "use_max_z", "min_x", "max_x",
+                         "min_y", "max_y", "min_z", "max_z", "owner_space", "use_transform_limit"):
+                setattr(n, attr, getattr(c, attr))
+            travel = c.max_z or travel
+    for d in mesh.data.shape_keys.animation_data.drivers:
+        if d.data_path not in (f'key_blocks["{close[s][1]}"].value' for s in "lr"):
+            continue
+        v = d.driver.variables.new()
+        v.name, v.type = "parpadeo", "TRANSFORMS"
+        v.targets[0].id, v.targets[0].bone_target = rig, BLINK
+        v.targets[0].transform_type, v.targets[0].transform_space = "LOC_Z", "LOCAL_SPACE"
+        d.driver.expression = f"min(1.0, {d.driver.expression} + max(0.0, parpadeo / {travel}))"
+    return True
+
+
 def slider_keys(mesh):
     """{slider bone: (first key index, key name)} from the shape-key drivers Gacha made."""
     out = {}
@@ -233,9 +318,12 @@ def slider_keys(mesh):
     index = {k.name: i for i, k in enumerate(sk.key_blocks)}
     for d in sk.animation_data.drivers:
         m = re.fullmatch(r'key_blocks\["(.+)"\]\.value', d.data_path)
-        bone = next((v.targets[0].bone_target for v in d.driver.variables if v.targets[0].bone_target.startswith("CTRL-")), None)
-        if m and bone and m.group(1) in index:
-            out[bone] = min(out.get(bone, (1e9, "")), (index[m.group(1)], m.group(1)))
+        if not (m and m.group(1) in index):
+            continue
+        for v in d.driver.variables:  # every slider of the key: its own and, for the eyes, the blink
+            bone = v.targets[0].bone_target
+            if bone.startswith("CTRL-"):
+                out[bone] = min(out.get(bone, (1e9, "")), (index[m.group(1)], m.group(1)))
     return out
 
 
@@ -256,7 +344,8 @@ def arrange_face(context, rig, mesh):
     for s in ("Boca", "Labios"):
         if not groups.get(s):
             groups.pop(s, None)
-    layouts = {name: section_layout(name, bones, keys) for name, bones in groups.items()}
+    sides = slider_sides(rig, mesh, keys)
+    layouts = {name: section_layout(name, bones, sides) for name, bones in groups.items()}
     # text widgets need object mode; their size sets the frames
     texts = set(groups) | {t for lay in layouts.values() for t, _, _ in lay[1]}
     text_box = {}
