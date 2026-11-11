@@ -6,35 +6,86 @@ Most Strinova skeletons have no face deformers besides the eyeballs (and eyelash
 characters): expressions are shape keys, which only the lobby models carry.
 """
 import bpy, re, colorsys
+import numpy as np
 from math import pi
-from mathutils import Matrix, Vector
+from mathutils import Matrix, Vector, kdtree
 from . import shading, common
 
 # ---------- shape key sections ----------
-# Names are pinyin + English and vary per character (biyanL, EL_mph48_biyan_L, B_close_L...):
-# yan = eye, mei = brow, zui = mouth, tongkong = pupil, tou = head.
-PHONEMES = re.compile(r"(m_)?(pp|ff|th|dd|kk|ch|ss|nn|rr|aa|[aeiou]\d?|yi\d?|yi_?[lr]|wu\d?|ei\d?|em|sil|er|ga|ha|ju|mm|wo|xi)")
-SECTIONS = (  # first match wins; phonemes are checked before, the rest falls into "Cabeza y otros"
-    ("Cejas", r"mei|brow|^b_"),
-    ("Pupilas", r"look_|^eye_(up|down|left|right|l|r)$|tongkong|xitong|light|tk_|eyeball|mydriasis|hl_|gg(big|dong|guan)"),
-    ("Ojos", r"yan|eye|o_o|^=_"),
-    ("Boca", r"zui|mouth|^m_|tooth|tongue|tushe|lip|smile|^ta$|^mi$"),
-)  # jaw and cheeks (gulian) go to "Cabeza y otros" on purpose
-ORDER = ("Ojos", "Pupilas", "Cejas", "Boca", "Fonemas", "Cabeza y otros")
+# Shape key names are pinyin + English and vary per character (biyanL, EL_mph48_biyan_L, B_close_L...).
+# Built from the 390 names in the 506 lobby models. Each name is lower-cased, its prefix (EL_, mph48_...)
+# removed, then: phonemes first, then the sections below in order, first pattern found wins; the rest
+# goes to "Cabeza y otros". Order matters: brows before mouth (base_smile_brow), pupils before eyes
+# (eyeball_big, look_up), eyes before mouth (eye_C_smile).
+PHONEMES = re.compile(r"(m_)?(pp|ff|th|dd|kk|ch|ss|nn|rr|aa|[aeiou]\d?|yi\d?|yi_?[lr]|wu\d?|ei\d?|em|sil|er|ga|ha|ju|mm|wo|xi)(_0)?")  # DD_0, SS_0 (HuiXing)
+SECTIONS = (  # (section, ((regex, meaning), ...))
+    ("Cejas", (
+        (r"^b_", "ceja (prefijo B_: B_close, B_up...)"),
+        (r"brow", "ceja (base_*_brow)"),
+        (r"meimao", "ceja (眉毛)"),
+        (r"yamei", "ceja baja (压眉)"),
+        (r"numei", "ceño enojado (怒眉)"),
+        (r"tiaomei", "ceja alzada (挑眉)"),
+        (r"bamei", "cejas tristes, en ocho (八字眉)"),
+        (r"cumei|zhoumei", "ceño fruncido (蹙眉 / 皱眉)"),
+        (r"mei", "ceja (眉)"),
+    )),
+    ("Pupilas", (
+        (r"tongkong|tk", "pupila (瞳孔, TK)"),
+        (r"xitong", "pupila rasgada (细瞳)"),
+        (r"eyeball", "globo ocular"),
+        (r"mydriasis", "pupila dilatada"),
+        (r"bulging", "ojos saltones"),
+        (r"douji", "bizco (斗鸡眼)"),
+        (r"^look_|^eye_(up|down|left|right|l|r)$", "mirada arriba / abajo / a un lado"),
+        (r"light|hl_|[dx]gg", "brillo del ojo (高光: grande DGG, pequeño XGG)"),
+    )),
+    ("Ojos", (
+        (r"^o_o$|^=(_[lr])?$", "ojos en blanco / cerrados en línea (o_o, =_=)"),
+        (r"biyan", "cerrar el ojo (闭眼)"),
+        (r"dengyan", "ojo muy abierto (瞪眼)"),
+        (r"pin(g)?yan", "ojo entrecerrado, plano (平眼)"),
+        (r"miyan", "ojo entornado (眯眼)"),
+        (r"xiaoyan", "ojo sonriente (笑眼)"),
+        (r"banyan", "ojo medio cerrado (半眼)"),
+        (r"xieyan", "mirada de reojo (斜眼)"),
+        (r"muyan", "mirada vacía (木眼)"),
+        (r"xiayanpi", "párpado inferior (下眼皮)"),
+        (r"yanjiao", "comisura del ojo (眼角; nei = interior, wai = exterior)"),
+        (r"yan", "ojo (眼)"),
+        (r"eye", "ojo / párpado (eye, upEye, eye_C_smile...)"),
+        (r"angrywei|trguan", "mirada enojada, lágrimas (Mara; medido: mueven la zona del ojo)"),
+    )),
+    ("Boca", (
+        (r"^m_|^mop", "boca (prefijo M_ / Mop)"),
+        (r"zuijiao", "comisura de la boca (嘴角)"),
+        (r"duzui", "puchero (嘟嘴)"),
+        (r"zui", "boca (嘴: miaozui, MiZhui...)"),
+        (r"sanjiao", "boca triangular (三角嘴)"),
+        (r"ganga", "mueca incómoda (尴尬)"),
+        (r"tushe|tongue", "lengua afuera (吐舌头)"),
+        (r"tooth", "dientes"),
+        (r"mouth|lip|smile", "boca, labios, sonrisa"),
+        (r"^ta$|^mi$", "boca de 'ta' / 'mi'"),
+    )),
+)  # not listed, so "Cabeza y otros": tou (头, cabeza), gulian (鼓脸, mejillas infladas), bizi / nose (鼻子,
+#   nariz), jaw (mandíbula), and per-character effects (faceM, Maddelena_Face_V006, MiZhui moves nothing)
+ORDER = ("Ojos", "Pupilas", "Cejas", "Boca", "Labios", "Cabeza y otros")  # Boca: opens the mouth (+ phonemes); Labios: keeps it closed
 COLS, DX, DY = 6, 0.019, 0.039  # Gacha's slider spacing
 SECTION_GAP = 0.04
 FACE_HALF = 0.18  # keep the face clear, like Gacha: eye sections on its left, mouth ones on its right
 LABEL_DZ = 0.019  # label above the first row
 LABEL_SCALE = 0.011
-# Ojos, Pupilas and Cejas split into: both sides on top, then right and left. Seen from the front
-# the character's right is on the viewer's left (-X), so Derecha goes left.
+# Ojos, Pupilas and Cejas split into: both sides on top, then right and left. Each block sits on the
+# side of the face it moves as seen from the front: *_L keys move the character's left (+X, measured),
+# which is the viewer's right, so Izquierda goes right and Derecha left.
 SIDED = ("Ojos", "Pupilas", "Cejas")
 SIDES = (("", "Ambos"), ("R", "Derecha"), ("L", "Izquierda"))
 SIDE_COLS = 3
 SIDE_GAP = 2 * DX  # between the Derecha and Izquierda blocks
-# one bright hue per sub-group (Blender's preset color sets include near-black ones), stepping 5/12
-# of the wheel so neighbouring frames contrast; 12 = 3 sides x Ojos/Pupilas/Cejas + 3 plain sections
-SUB_COLORS = [colorsys.hsv_to_rgb((i * 5 % 12) / 12, 0.75, 0.95) for i in range(12)]
+# one bright hue per sub-group (Blender's preset color sets include near-black ones), stepping 5/13
+# of the wheel so neighbouring frames contrast; 13 = 3 sides x Ojos/Pupilas/Cejas + 4 plain sections
+SUB_COLORS = [colorsys.hsv_to_rgb((i * 5 % 13) / 13, 0.75, 0.95) for i in range(13)]
 SUB_DZ = 0.02  # sub-label above its rows
 SUB_SCALE = 0.007
 FRAME_PAD = 0.006  # margin of each frame around what it holds
@@ -57,7 +108,65 @@ def section_of(key):
     k = re.sub(r"^(el_|eb_|mth_)?(mph\d+_)?", "", key.lower())
     if PHONEMES.fullmatch(k):
         return "Fonemas"
-    return next((name for name, pat in SECTIONS if re.search(pat, k)), "Cabeza y otros")
+    return next((name for name, rows in SECTIONS for pat, _ in rows if re.search(pat, k)), "Cabeza y otros")
+
+
+OPEN_MIN = 0.004  # lips this much further apart = the key opens the mouth (measured: 10-19 mm open, <3 mm not)
+LIP_GAP = 0.0015  # closed lips: upper and lower lip vertices this close at rest, not joined by an edge
+
+
+def opening_keys(mesh, names):
+    """The shape keys in `names` that open the mouth. The mouth is closed at rest, so upper and lower
+    lip vertices sit almost on top of each other without sharing an edge; a key opens the mouth if it
+    pulls such a pair apart. Only the face skin counts: teeth and tongue are separate pieces that
+    move inside a closed mouth. If no such pairs are found, every key counts as opening."""
+    me, kb = mesh.data, mesh.data.shape_keys.key_blocks
+    n = len(me.vertices)
+    R = np.array(mesh.matrix_world.to_3x3())
+
+    def co(k):
+        a = np.empty(n * 3)
+        k.data.foreach_get("co", a)
+        return a.reshape(-1, 3) @ R.T
+
+    base = co(kb[0])
+    shapes = {name: co(kb[name]) for name in names if name in kb}
+    region = np.zeros(n, bool)
+    for c in shapes.values():
+        region |= np.linalg.norm(c - base, axis=1) > 0.0005
+    edges = {tuple(sorted(e.vertices)) for e in me.edges}
+    parent = list(range(n))  # connected pieces (union-find)
+
+    def root(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for a, b in edges:
+        ra, rb = root(a), root(b)
+        if ra != rb:
+            parent[ra] = rb
+    piece = np.array([root(i) for i in range(n)])
+    if not region.any():
+        return set(shapes)
+    ids, counts = np.unique(piece[region], return_counts=True)
+    idx = np.nonzero(region & (piece == ids[np.argmax(counts)]))[0]  # the face skin around the mouth
+    kd = kdtree.KDTree(len(idx))
+    for i in idx:
+        kd.insert(base[i], int(i))
+    kd.balance()
+    pairs = np.array(sorted({(min(i, j), max(i, j)) for i in idx for _, j, _ in kd.find_range(base[i], LIP_GAP)
+                             if j != i and (min(i, j), max(i, j)) not in edges}))
+    if not len(pairs):
+        return set(shapes)
+    rest = np.linalg.norm(base[pairs[:, 0]] - base[pairs[:, 1]], axis=1)
+    out = set()
+    for name, c in shapes.items():
+        grow = np.sort(np.linalg.norm(c[pairs[:, 0]] - c[pairs[:, 1]], axis=1) - rest)
+        if grow[-min(3, len(grow))] > OPEN_MIN:  # third largest: one stray pair is not an open mouth
+            out.add(name)
+    return out
 
 
 def side_of(key):
@@ -89,7 +198,7 @@ def section_layout(name, bones, keys):
         for i, b in enumerate(both):
             pos[b] = ((width - grid_w) / 2 + (i % COLS) * DX, z - SUB_DZ - (i // COLS) * DY)
         z -= SUB_DZ + ((len(both) - 1) // COLS + 1) * DY
-    for (side, label), x0 in zip(SIDES[1:], (0.0, side_w + SIDE_GAP)):
+    for (side, label), x0 in zip(SIDES[1:], (0.0, side_w + SIDE_GAP)):  # R block at -X, L block at +X
         if groups[side]:
             subs.append((label, x0 + side_w / 2, z))
         for i, b in enumerate(groups[side]):
@@ -139,6 +248,14 @@ def arrange_face(context, rig, mesh):
     groups = {}
     for bone, (i, key) in sorted(keys.items(), key=lambda kv: kv[1]):
         groups.setdefault(section_of(key), []).append(bone)
+    if groups.get("Boca"):  # split by what each key does: opens the mouth (Boca) or only moves the lips
+        opens = opening_keys(mesh, [keys[b][1] for b in groups["Boca"]])
+        groups["Labios"] = [b for b in groups["Boca"] if keys[b][1] not in opens]
+        groups["Boca"] = [b for b in groups["Boca"] if keys[b][1] in opens]
+    groups["Boca"] = groups.get("Boca", []) + groups.pop("Fonemas", [])  # phonemes join the mouth section
+    for s in ("Boca", "Labios"):
+        if not groups.get(s):
+            groups.pop(s, None)
     layouts = {name: section_layout(name, bones, keys) for name, bones in groups.items()}
     # text widgets need object mode; their size sets the frames
     texts = set(groups) | {t for lay in layouts.values() for t, _, _ in lay[1]}
@@ -235,6 +352,9 @@ def arrange_face(context, rig, mesh):
         if rects:
             add_frame(side, union(rects, FRAME_PAD), face_coll)
     bpy.ops.object.mode_set(mode="OBJECT")
+    for c in list(face_coll.children):  # sections that no longer exist (an older rig's Cara: Fonemas)
+        if c.name.startswith("Cara: ") and c.name[6:] in ("Fonemas",) and not c.bones:
+            rig.data.collections.remove(c)
     for names, rgb in zip(colored, SUB_COLORS):
         for n in names:
             common.paint(rig, n, rgb)
