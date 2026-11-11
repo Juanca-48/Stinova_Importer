@@ -4,7 +4,7 @@ rest (most hats share the head's or a hair bone's weights) the user selects the 
 and the operator gives it its own bone, weighting it rigidly to that bone."""
 import bpy, re
 from mathutils import Vector
-from . import shading
+from . import shading, common
 
 COLL = "Accesorios"
 PREFIX = "ACC-"
@@ -56,9 +56,7 @@ def make_control(rig, name, points):
     pb.custom_shape_rotation_euler = rot.to_euler()
     pb.custom_shape_translation = rot @ (front - b.head_local)
     pb.custom_shape_scale_xyz = (MASK_SIZE,) * 3
-    for c in (b.color, pb.color):
-        c.palette = "CUSTOM"
-        c.custom.normal, c.custom.select, c.custom.active = COLOR, (1.0, 0.9, 0.5), (1.0, 1.0, 1.0)
+    common.paint(rig, name, COLOR, (1.0, 0.9, 0.5))
 
 
 def piece(mesh, match, minimum=0.5):
@@ -109,23 +107,12 @@ def add_toggle(rig, mesh, bone, idx):
     prop, vg_name, mod_name = SHOW + bone, f"ST {bone}", f"ST Ocultar {bone}"
     vg = mesh.vertex_groups.get(vg_name) or mesh.vertex_groups.new(name=vg_name)
     vg.add(idx, 1.0, "REPLACE")
-    if prop not in rig:
-        rig[prop] = True
-        rig.id_properties_ui(prop).update(description=f"Muestra u oculta {bone} (se puede animar)")
-        rig.update_tag()  # the drivers below must find the new property in the evaluated rig
     mod = mesh.modifiers.get(mod_name) or mesh.modifiers.new(mod_name, "NODES")
     mod.node_group = hide_group_nodes()
     shading.mod_input(mod, "Grupo").value = vg_name
     arm_i = next((i for i, m in enumerate(mesh.modifiers) if m.type == "ARMATURE"), -1)
     mesh.modifiers.move(mesh.modifiers.find(mod_name), arm_i + 1)
-    for path in ("show_viewport", "show_render"):  # modifier on = piece hidden
-        mod.driver_remove(path)
-        d = mod.driver_add(path).driver
-        d.type = "SCRIPTED"
-        v = d.variables.new()
-        v.name, v.type = "ver", "SINGLE_PROP"
-        v.targets[0].id, v.targets[0].data_path = rig, f'["{prop}"]'
-        d.expression = "1 - ver"  # last, as in paper.ensure_switch
+    common.drive_modifier(mod, rig, prop, "1 - v", True, f"Muestra u oculta {bone} (se puede animar)")  # on = hidden
 
 
 def add_existing(rig, mesh):

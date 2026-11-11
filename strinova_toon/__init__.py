@@ -8,11 +8,7 @@ bl_info = {
     "category": "Import-Export",
 }
 
-# Strinova (PaperMan) character setup, split by concern so a change in one area cannot break another:
-#   importer.py  import .uemodel/.fbx and find the FModel folder
-#   rig.py       Rigify rig via Gacha Setup's NTE rigger, rig fixes, hair/clothes/chest physics
-#   shading.py   toon materials, lighting panel and sun, outline
-#   common.py    helpers shared by all three
+# Strinova (PaperMan) character setup, one module per concern: see the README's module table.
 if "bpy" in locals():  # add-on reload: refresh the submodules too (import_module also loads new ones)
     import importlib
     for _n in ("common", "shading", "face", "accessory", "rig", "paper", "importer"):
@@ -55,7 +51,7 @@ class STRINOVA_PT_panel(bpy.types.Panel):
                 for k in sorted(k for k in arm.keys() if k.startswith(accessory.SHOW)):  # one per accessory
                     label = k[len(accessory.SHOW):].removeprefix(accessory.PREFIX)
                     body.prop(arm, f'["{k}"]', text=f"Mostrar {label}", icon="HIDE_OFF")
-            if arm:  # greyed out until a piece is selected in Edit Mode
+                # greyed out until a piece is selected in Edit Mode
                 body.operator(accessory.STRINOVA_OT_accessory.bl_idname, icon="BONE_DATA")
         if arm and rig.PHYSICS_PROP in arm:
             body.separator()

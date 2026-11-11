@@ -1,13 +1,14 @@
-"""Face controls on top of Gacha Setup's face rig: gaze control for the eyeball bones and the
-shape-key sliders sorted into sections (eyes, pupils, brows, mouth, phonemes, other).
+"""Face controls on top of Gacha Setup's face rig: gaze control for the eyeball bones, the
+shape-key sliders sorted into sections (eyes, pupils, brows, mouth, phonemes, other) and, for the
+few models with facial joints (*_SkinJNT), a control per joint.
 
-Strinova's skeleton has no face deformers besides the eyeballs (and eyelashes on some
+Most Strinova skeletons have no face deformers besides the eyeballs (and eyelashes on some
 characters): expressions are shape keys, which only the lobby models carry.
 """
 import bpy, re, colorsys
 from math import pi
 from mathutils import Matrix, Vector
-from . import shading
+from . import shading, common
 
 # ---------- shape key sections ----------
 # Names are pinyin + English and vary per character (biyanL, EL_mph48_biyan_L, B_close_L...):
@@ -134,7 +135,7 @@ def arrange_face(context, rig, mesh):
     (inside "Face"). Sliders only move, so their drivers (local Z) keep working."""
     keys = slider_keys(mesh)
     if not keys:
-        return {}
+        return
     groups = {}
     for bone, (i, key) in sorted(keys.items(), key=lambda kv: kv[1]):
         groups.setdefault(section_of(key), []).append(bone)
@@ -236,11 +237,7 @@ def arrange_face(context, rig, mesh):
     bpy.ops.object.mode_set(mode="OBJECT")
     for names, rgb in zip(colored, SUB_COLORS):
         for n in names:
-            for c in (rig.data.bones[n].color, rig.pose.bones[n].color):  # pose color overrides Gacha's
-                c.palette = "CUSTOM"
-                c.custom.normal = rgb
-                c.custom.select = [min(1.0, v + 0.35) for v in rgb]
-                c.custom.active = (1.0, 1.0, 1.0)
+            common.paint(rig, n, rgb)
     for n, text, scale in labels:
         pb = rig.pose.bones[n]
         pb.custom_shape = text_widget(text)
@@ -270,7 +267,6 @@ def arrange_face(context, rig, mesh):
         pb.use_custom_shape_bone_size = False
         pb.lock_location = pb.lock_rotation = pb.lock_scale = (True, True, True)
         pb.bone.hide_select = True  # guide only: clicks go to the bar
-    return {k: len(v) for k, v in groups.items()}
 
 
 def frame_widget():
@@ -300,7 +296,7 @@ def add_face_bones(rig, mesh):
     bones = [b for b in rig.data.bones if b.name.endswith(JNT) and b.name in weighted
              and not b.name.startswith("Facial_Master")]  # the master moves the whole face
     if not bones:
-        return 0
+        return
     shape = shading._mesh_obj("WGT-ST_face_joint", shading._circle(1.0, 16), None, None, None)
     main, inner = face_collection(rig, "Huesos", 4), face_collection(rig, "Boca interior", 4)
     inner.is_visible = False
@@ -324,11 +320,7 @@ def add_face_bones(rig, mesh):
         pb.custom_shape_scale_xyz = (LIP_R if "Lip" in n else JNT_R,) * 3
         pb.custom_shape_rotation_euler = rot.to_euler()
         pb.custom_shape_translation = rot @ off
-        rgb = colors.get(n.split("_")[0], SUB_COLORS[2])
-        for c in (b.color, pb.color):
-            c.palette = "CUSTOM"
-            c.custom.normal, c.custom.select, c.custom.active = rgb, [min(1.0, v + 0.35) for v in rgb], (1.0, 1.0, 1.0)
-    return len(bones)
+        common.paint(rig, n, colors.get(n.split("_")[0], SUB_COLORS[2]))
 
 
 # ---------- gaze ----------
@@ -363,7 +355,7 @@ def add_gaze(context, rig):
     bpy.ops.object.mode_set(mode="OBJECT")
     gaze = face_collection(rig, GAZE, 4)
     hidden = rig.data.collections_all.get("Other") or rig.data.collections.new("Other")
-    ellipse = [(0.06 * v[0] / 0.03, 0, 0.025 * v[2] / 0.03) for v in shading._circle(0.03)]
+    ellipse = [(0.06 * x, 0, 0.025 * z) for x, _, z in shading._circle(1.0)]
     shapes = {GAZE: shading._mesh_obj("WGT-ST_gaze", ellipse, None, None, None),
               "eye": shading._mesh_obj("WGT-ST_gaze_eye", shading._circle(0.012), None, None, None)}
     for n in [GAZE] + [f"{GAZE}.{s}" for s in eyes]:

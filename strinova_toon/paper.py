@@ -6,6 +6,7 @@ same rig moves both. The game swaps them in a single frame, hidden by the animat
 rig's "st_paper" property does the same (keyframe it: a bool keys with constant interpolation).
 """
 import bpy, os, re
+from . import common
 from mathutils import Vector
 
 PAPER_PROP = "st_paper"
@@ -112,27 +113,15 @@ def hide_group():
 
 def ensure_switch(rig):
     """rig["st_paper"]: off = 3D model, on = paper. Each mesh ends with an "ST Ocultar" modifier
-    that its driver switches on to hide it. Not hide_viewport: Blender stops evaluating an object
-    hidden that way, so a driver on it could never show it again."""
-    if PAPER_PROP not in rig:
-        rig[PAPER_PROP] = False
-        rig.id_properties_ui(PAPER_PROP).update(description="Muestra la version de papel en lugar del modelo 3D")
-        rig.update_tag()  # the evaluated rig must get the new property, or the drivers read nothing and go invalid
+    that the property switches on to hide it."""
     for o in bpy.data.objects:
         if o.type != "MESH" or o.find_armature() != rig:
             continue
         mod = o.modifiers.get(HIDE) or o.modifiers.new(HIDE, "NODES")
         mod.node_group = hide_group()
         o.modifiers.move(o.modifiers.find(HIDE), len(o.modifiers) - 1)  # last: hides the outline too
-        expr = "1 - papel" if o.get(PAPER_PROP) else "papel"  # hidden when 1; simple expression: no auto-run
-        for path in ("show_viewport", "show_render"):
-            mod.driver_remove(path)
-            d = mod.driver_add(path).driver
-            d.type = "SCRIPTED"
-            v = d.variables.new()
-            v.name, v.type = "papel", "SINGLE_PROP"
-            v.targets[0].id, v.targets[0].data_path = rig, f'["{PAPER_PROP}"]'
-            d.expression = expr  # last: setting it clears the "invalid" flag a too-early evaluation leaves
+        common.drive_modifier(mod, rig, PAPER_PROP, "1 - v" if o.get(PAPER_PROP) else "v", False,
+                              "Muestra la version de papel en lugar del modelo 3D")
 
 
 def find_host(coll):

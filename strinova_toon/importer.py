@@ -19,7 +19,7 @@ def char_dir_from(path, current=""):
     return None  # e.g. an FBX saved elsewhere: keep the folder already set in the panel
 
 
-def skin_of(path):
+def skin_folder(path):
     """'S001'-style skin folder in the path, or None."""
     return next((p for p in reversed(os.path.normpath(path).split(os.sep)) if re.fullmatch(r"S\d{3}", p)), None)
 
@@ -27,7 +27,7 @@ def skin_of(path):
 def paper_path(path, char_dir):
     """The skin's paper model: in <skin>\\Mesh2D next to the 3D model's folder (FModel export or an FBX
     tree like it), else in FModel's export. Names vary (_PPM_, _PMM_, _skin), so any model there."""
-    skin = skin_of(path)
+    skin = skin_folder(path)
     dirs = [os.path.join(os.path.dirname(os.path.dirname(path)), "Mesh2D")]
     if skin and char_dir:
         dirs.append(os.path.join(char_dir, skin, "Mesh2D"))
@@ -40,7 +40,7 @@ def paper_path(path, char_dir):
 
 def collection_name(path, char_dir):
     """'<Character> <Skin>' from the file path (e.g. 'Flavia S001'), else the file name."""
-    skin = skin_of(path)
+    skin = skin_folder(path)
     char = os.path.basename(char_dir) if char_dir else None
     return " ".join(x for x in (char, skin) if x) or os.path.splitext(os.path.basename(path))[0]
 

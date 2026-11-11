@@ -116,7 +116,6 @@ def fix_finger_curl(rig):
     bones) closed them backwards. A positive curl moves the tip towards the bone's local +Z; with
     the palms facing down in the rest pose that must point down, otherwise flip the driver sign."""
     drivers = rig.animation_data.drivers if rig.animation_data else []
-    flipped = []
     for side in (".L", ".R"):
         for f in ("f_index", "f_middle", "f_ring", "f_pinky", "thumb"):  # thumb: Gacha doesn't mirror it for .R
             b = rig.data.bones.get(f"ORG-{f}.01{side}")
@@ -127,9 +126,6 @@ def fix_finger_curl(rig):
                 if d.data_path.startswith(f'pose.bones["MCH-{f}.') and f'_drv{side}"]' in d.data_path:
                     expr = d.driver.expression.lstrip("-")
                     d.driver.expression = f"-{expr}" if backwards else expr  # set, not toggle: safe to rerun
-            if backwards:
-                flipped.append(f + side)
-    return flipped
 
 
 def fix_breasts(context, rig):
