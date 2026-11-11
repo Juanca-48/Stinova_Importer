@@ -5,5 +5,6 @@ def target_mesh(context):
     """The character mesh: the active mesh, or the skinned mesh of the active armature."""
     ob = context.active_object
     if ob and ob.type == "ARMATURE":  # allow selecting the skeleton too
-        ob = next((c for c in ob.children if c.type == "MESH" and c.find_armature() == ob), None)
+        meshes = [c for c in ob.children if c.type == "MESH" and c.find_armature() == ob]
+        ob = next((c for c in meshes if not c.get("st_paper")), meshes[0] if meshes else None)  # 3D over paper
     return ob if ob and ob.type == "MESH" else None

@@ -257,6 +257,7 @@ class STRINOVA_OT_rig(bpy.types.Operator):
             fix_breasts(context, rig)
             face.add_gaze(context, rig)
             face.arrange_face(context, rig, obj)
+            face.add_face_bones(rig, obj)
             # head follows Gacha's head-controller (the target in front of the face) from the start;
             # the toggle stays on the gear bone (plate-settings) to turn it off
             settings = rig.pose.bones.get("plate-settings")
