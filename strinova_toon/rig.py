@@ -1,14 +1,15 @@
 """Rig: Rigify rig through Gacha Setup's NTE rigger, Strinova-specific fixes on top of it, and the
 constraint 'physics' for hair, clothes and chest."""
-import bpy, re
+import bpy, re, contextlib
 from .common import target_mesh
-from . import shading
+from . import shading, face
 
 # ---------- rig + physics ----------
 PHYS_COLLECTIONS = ("Hair", "Clothes")
 NOT_PHYSICS = {"SocketADS"}  # gameplay socket Gacha Setup files under Clothes
 
 
+PHYSICS_PROP = "st_physics"  # on/off toggle: multiplies every inertia influence, live and animatable
 INERTIA_PROPS = {  # group: (rig property, default influence, panel label)
     # 20% stiffer than Gacha Setup's 0.7 / 0.4: theirs felt too loose on Strinova's chains
     "Hair": ("st_hair_inertia", 0.56, "Inercia pelo"),
@@ -59,20 +60,9 @@ def apply_inertia(rig):
         if prop not in rig:
             rig[prop] = default
         rig.id_properties_ui(prop).update(min=0.0, max=1.0, description=f"{label}: cuanto se retrasa y arrastra al animar")
-
-    for pb in rig.pose.bones:  # drop previous versions (Copy Rotation / anchored Damped Track)
-        c = pb.constraints.get("ST Inertia")
-        if c:
-            pb.driver_remove('constraints["ST Inertia"].influence')
-            pb.constraints.remove(c)
-    old = [b.name for b in rig.data.bones if b.name.startswith(("STI-", "STA-"))]
-    if old:
-        bpy.ops.object.mode_set(mode="EDIT")
-        for n in old:
-            rig.data.edit_bones.remove(rig.data.edit_bones[n])
-        bpy.ops.object.mode_set(mode="OBJECT")
-    if "ST Inertia" in colls:
-        rig.data.collections.remove(colls["ST Inertia"])
+    if PHYSICS_PROP not in rig:
+        rig[PHYSICS_PROP] = True
+    rig.id_properties_ui(PHYSICS_PROP).update(description="Activa la fisica de pelo, ropa y pecho")
 
     # Damped Track aims the bone's Y axis at its child. UEFormat imports Strinova's chain bones
     # pointing elsewhere (not at the child), so tracking would swing every bone ~90 deg at rest.
@@ -105,10 +95,11 @@ def apply_inertia(rig):
         c = rig.pose.bones[n].constraints.new("DAMPED_TRACK")
         c.name, c.target, c.subtarget, c.track_axis = "ST Inertia", rig, kids[0], "TRACK_Y"
         drv = c.driver_add("influence").driver
-        drv.type = "AVERAGE"
-        v = drv.variables.new()
-        v.type = "SINGLE_PROP"
-        v.targets[0].id, v.targets[0].data_path = rig, f'["{INERTIA_PROPS[g][0]}"]'
+        drv.type, drv.expression = "SCRIPTED", "inercia * activa"  # simple expression: no auto-run needed
+        for name, prop in (("inercia", INERTIA_PROPS[g][0]), ("activa", PHYSICS_PROP)):
+            v = drv.variables.new()
+            v.name, v.type = name, "SINGLE_PROP"
+            v.targets[0].id, v.targets[0].data_path = rig, f'["{prop}"]'
     return chains
 
 
@@ -117,22 +108,6 @@ def target_rig(context):
     if ob and ob.type == "MESH":
         ob = ob.find_armature()
     return ob if ob and ob.type == "ARMATURE" and "Hair" in ob.data.collections_all else None
-
-
-class STRINOVA_OT_inertia(bpy.types.Operator):
-    bl_idname = "strinova.inertia"
-    bl_label = "Fisica por Constraints"
-    bl_description = "Pelo y ropa reaccionan en tiempo real al girar cabeza/torso, sin simulacion"
-    bl_options = {"REGISTER", "UNDO"}
-
-    @classmethod
-    def poll(cls, context):
-        return context.mode == "OBJECT" and target_rig(context) is not None
-
-    def execute(self, context):
-        n = apply_inertia(target_rig(context))
-        self.report({"INFO"}, f"{n} cadenas con inercia")
-        return {"FINISHED"}
 
 
 def fix_finger_curl(rig):
@@ -186,10 +161,60 @@ def fix_breasts(context, rig):
     return sides
 
 
+@contextlib.contextmanager
+def others_aside(context, obj):
+    """Gacha's NTE rigger works on the whole scene: it rebinds every mesh's Armature modifier to the
+    new rig and, not finding the rig by name, post-processes the first armature in the scene (with
+    two characters it rebuilt the first one's rig). Unlink everything that isn't this character
+    while it runs, then put it back."""
+    arm = obj.find_armature()
+    pan = obj.get("st_panel")
+    keep = {obj, arm, pan, *arm.children_recursive, *(pan.children_recursive if pan else ())}
+    keep |= {v for v in obj.values() if isinstance(v, bpy.types.Object)}  # its sun and head empties
+    sc = context.scene
+    # whole collections where possible: Gacha deletes another character's WGTS_* collection if it
+    # finds it empty
+    def has_keep(c):
+        return any(o in keep for o in c.all_objects)
+    parked = [c for c in sc.collection.children if not has_keep(c)]
+    for c in parked:
+        sc.collection.children.unlink(c)
+    moved = [(c, o) for c in (sc.collection, *sc.collection.children_recursive) for o in c.objects if o not in keep]
+    for c, o in moved:
+        c.objects.unlink(o)
+    # its face rig takes the first mesh with shape keys in bpy.data, scene or not: point it at this one
+    from setup_wizard.character_rig_setup import nte_face_rig
+    find_face = nte_face_rig.find_face_mesh
+    nte_face_rig.find_face_mesh = lambda: obj
+    # ...and deletes every WGT-Face_* object first, the other characters' face sliders included
+    face_wgts = [(o, o.name) for o in bpy.data.objects if o.name.startswith("WGT-Face_")]
+    for o, name in face_wgts:
+        o.name = "ST " + name
+    try:
+        yield
+    finally:
+        nte_face_rig.find_face_mesh = find_face
+        for o, name in face_wgts:
+            o.name = name  # gets .001 if the new face made one with the same name
+        for c in parked:
+            try:
+                sc.collection.children.link(c)
+            except ReferenceError:  # removed by Gacha; its objects are relinked below if they were loose
+                pass
+        for c, o in moved:
+            try:
+                c.objects.link(o)
+            except RuntimeError:  # already linked
+                pass
+            except ReferenceError:  # Gacha removed the collection
+                if not o.users_collection:
+                    sc.collection.objects.link(o)
+
+
 class STRINOVA_OT_rig(bpy.types.Operator):
     bl_idname = "strinova.rig_physics"
-    bl_label = "Rig + Fisica"
-    bl_description = "Genera el rig Rigify con Gacha Setup (modo NTE) y la fisica por constraints en pelo y ropa"
+    bl_label = "Generar rig"
+    bl_description = "Genera el rig Rigify con Gacha Setup (modo NTE), con controles de luz y fisica de pelo, ropa y pecho"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -215,7 +240,7 @@ class STRINOVA_OT_rig(bpy.types.Operator):
         arm.select_set(True)
         # the lighting panel is shading's business: it steps aside while Gacha's rigger runs and
         # joins the new rig afterwards
-        with shading.lighting_panel_aside(context, obj):
+        with others_aside(context, obj), shading.lighting_panel_aside(context, obj):
             # NTE shares Strinova's hyphenated Bip001 skeleton, so Gacha Setup's NTE rigger maps it as is
             bpy.ops.hoyoverse.rig_character(game_type="NEVERNESS_TO_EVERNESS")
             rig = obj.find_armature()
@@ -230,9 +255,16 @@ class STRINOVA_OT_rig(bpy.types.Operator):
                     b.bbone_segments = 1
             fix_finger_curl(rig)
             fix_breasts(context, rig)
+            face.add_gaze(context, rig)
+            face.arrange_face(context, rig, obj)
+            # head follows Gacha's head-controller (the target in front of the face) from the start;
+            # the toggle stays on the gear bone (plate-settings) to turn it off
+            settings = rig.pose.bones.get("plate-settings")
+            if settings and "Use Head Controller" in settings:
+                settings["Use Head Controller"] = 1
         n = apply_inertia(rig)
-        self.report({"INFO"}, f"Rig listo: {rig.name}, {n} cadenas con fisica por constraints")
+        self.report({"INFO"}, f"Rig listo: {rig.name}, {n} cadenas con fisica")
         return {"FINISHED"}
 
 
-classes = (STRINOVA_OT_rig, STRINOVA_OT_inertia)
+classes = (STRINOVA_OT_rig,)
