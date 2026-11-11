@@ -2,7 +2,7 @@
 constraint 'physics' for hair, clothes and chest."""
 import bpy, re, contextlib
 from .common import target_mesh
-from . import shading, face
+from . import shading, face, accessory
 
 # ---------- rig + physics ----------
 PHYS_COLLECTIONS = ("Hair", "Clothes")
@@ -116,7 +116,6 @@ def fix_finger_curl(rig):
     bones) closed them backwards. A positive curl moves the tip towards the bone's local +Z; with
     the palms facing down in the rest pose that must point down, otherwise flip the driver sign."""
     drivers = rig.animation_data.drivers if rig.animation_data else []
-    flipped = []
     for side in (".L", ".R"):
         for f in ("f_index", "f_middle", "f_ring", "f_pinky", "thumb"):  # thumb: Gacha doesn't mirror it for .R
             b = rig.data.bones.get(f"ORG-{f}.01{side}")
@@ -127,9 +126,6 @@ def fix_finger_curl(rig):
                 if d.data_path.startswith(f'pose.bones["MCH-{f}.') and f'_drv{side}"]' in d.data_path:
                     expr = d.driver.expression.lstrip("-")
                     d.driver.expression = f"-{expr}" if backwards else expr  # set, not toggle: safe to rerun
-            if backwards:
-                flipped.append(f + side)
-    return flipped
 
 
 def fix_breasts(context, rig):
@@ -257,6 +253,9 @@ class STRINOVA_OT_rig(bpy.types.Operator):
             fix_breasts(context, rig)
             face.add_gaze(context, rig)
             face.arrange_face(context, rig, obj)
+            face.add_face_bones(rig, obj)
+            if not accessory.add_existing(rig, obj):  # masks with their own bone (Eika S111: mask_bone)
+                accessory.add_headgear(context, rig, obj)  # else Eika's masks hang from hair_tt_*
             # head follows Gacha's head-controller (the target in front of the face) from the start;
             # the toggle stays on the gear bone (plate-settings) to turn it off
             settings = rig.pose.bones.get("plate-settings")

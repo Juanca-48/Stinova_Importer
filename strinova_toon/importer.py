@@ -1,7 +1,8 @@
 """Import: .uemodel (UEFormat) or .fbx, detect the FModel character folder, then optionally run the
 shading and rig operators (called through bpy.ops, so this module does not depend on them)."""
-import bpy, os, re
+import bpy, os, re, glob
 from bpy_extras.io_utils import ImportHelper
+from . import paper
 
 
 def char_dir_from(path, current=""):
@@ -18,10 +19,28 @@ def char_dir_from(path, current=""):
     return None  # e.g. an FBX saved elsewhere: keep the folder already set in the panel
 
 
+def skin_folder(path):
+    """'S001'-style skin folder in the path, or None."""
+    return next((p for p in reversed(os.path.normpath(path).split(os.sep)) if re.fullmatch(r"S\d{3}", p)), None)
+
+
+def paper_path(path, char_dir):
+    """The skin's paper model: in <skin>\\Mesh2D next to the 3D model's folder (FModel export or an FBX
+    tree like it), else in FModel's export. Names vary (_PPM_, _PMM_, _skin), so any model there."""
+    skin = skin_folder(path)
+    dirs = [os.path.join(os.path.dirname(os.path.dirname(path)), "Mesh2D")]
+    if skin and char_dir:
+        dirs.append(os.path.join(char_dir, skin, "Mesh2D"))
+    for d in dirs:
+        found = sorted(f for ext in ("fbx", "uemodel") for f in glob.glob(os.path.join(d, "**", f"*.{ext}"), recursive=True))
+        if found:
+            return found[0]
+    return None
+
+
 def collection_name(path, char_dir):
     """'<Character> <Skin>' from the file path (e.g. 'Flavia S001'), else the file name."""
-    parts = os.path.normpath(path).split(os.sep)
-    skin = next((p for p in reversed(parts) if re.fullmatch(r"S\d{3}", p)), None)
+    skin = skin_folder(path)
     char = os.path.basename(char_dir) if char_dir else None
     return " ".join(x for x in (char, skin) if x) or os.path.splitext(os.path.basename(path))[0]
 
@@ -80,10 +99,12 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
     filter_glob: bpy.props.StringProperty(default="*.uemodel;*.fbx", options={"HIDDEN"})
     do_shading: bpy.props.BoolProperty(name="Aplicar Toon Shading", default=True)
     do_rig: bpy.props.BoolProperty(name="Generar rig", default=True)
+    do_paper: bpy.props.BoolProperty(name="Incluir version de papel", default=False)
 
     def invoke(self, context, event):
         # the panel's checkboxes; the file browser's own options sidebar is easy to miss
-        self.do_shading, self.do_rig = context.scene.strinova_do_shading, context.scene.strinova_do_rig
+        sc = context.scene
+        self.do_shading, self.do_rig, self.do_paper = sc.strinova_do_shading, sc.strinova_do_rig, sc.strinova_do_paper
         return super().invoke(context, event)
 
     def execute(self, context):
@@ -104,13 +125,21 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
         vl = context.view_layer
         prev_active = vl.active_layer_collection
         name = collection_name(self.filepath, char_dir)
-        coll = bpy.data.collections.new(name)
-        context.scene.collection.children.link(coll)
+        # paper version (Mesh2D) of a character already in the scene: joins its collection and rig
+        existing = bpy.data.collections.get(name)
+        if existing and not _layer_collection(vl.layer_collection, existing):
+            existing = None  # same name but not in this scene
+        host = paper.find_host(existing) if paper.is_paper_path(self.filepath) else None
+        if host:
+            coll = existing
+        else:
+            coll = bpy.data.collections.new(name)
+            context.scene.collection.children.link(coll)
         vl.active_layer_collection = _layer_collection(vl.layer_collection, coll)
         before = set(bpy.data.objects)
         before_colls = set(bpy.data.collections)
         try:
-            return self._import(context, ext, char_dir, coll, before)
+            result = self._import(context, ext, char_dir, coll, before, host)
         finally:
             gather_leftovers(context, coll, before, before_colls)
             vl.active_layer_collection = prev_active
@@ -118,8 +147,15 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
                 bpy.data.collections.remove(coll)
             elif name not in bpy.data.collections:
                 coll.name = name  # Gacha's rigger renames the active collection to the bare character name
+        if result == {"FINISHED"} and self.do_paper and not paper.is_paper_path(self.filepath):
+            pp = paper_path(self.filepath, context.scene.strinova_char_dir)
+            if pp:  # a second import: it finds this character in its collection and joins its rig
+                bpy.ops.strinova.import_character(filepath=pp, do_shading=self.do_shading, do_rig=False, do_paper=False)
+            else:
+                self.report({"WARNING"}, f"{name}: esta skin no trae version de papel (Mesh2D)")
+        return result
 
-    def _import(self, context, ext, char_dir, coll, before):
+    def _import(self, context, ext, char_dir, coll, before, host=None):
         if ext == ".fbx":
             # leaf bones are the *_end tips Blender adds on FBX export; they are not part of the game skeleton
             bpy.ops.import_scene.fbx(filepath=self.filepath, ignore_leaf_bones=True)
@@ -140,7 +176,17 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
         context.view_layer.objects.active = mesh
         mesh.select_set(True)
         done, failed = ["importado"], []
-        steps = [("shading", self.do_shading, bpy.ops.strinova.setup_toon), ("rig", self.do_rig, bpy.ops.strinova.rig_physics)]
+        do_rig = self.do_rig
+        if host:  # before the shading, so it reuses the host's sun, head empties and lighting panel
+            unmapped = paper.attach(context, mesh, host)
+            done.append(f"papel en {host.find_armature().name}")
+            do_rig = False
+            if unmapped:
+                print(f"[Strinova] papel: grupos sin hueso en el rig: {unmapped}")
+        elif paper.is_paper_path(self.filepath) and do_rig:
+            print("[Strinova] version de papel sin su personaje 3D en la escena: se importa sin rig")
+            do_rig = False
+        steps = [("shading", self.do_shading, bpy.ops.strinova.setup_toon), ("rig", do_rig, bpy.ops.strinova.rig_physics)]
         for name, wanted, op in steps:
             if not wanted:
                 continue
@@ -151,7 +197,9 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
             except RuntimeError as e:
                 print(f"[Strinova] {name} fallo: {e}")
                 failed.append(name)
-        msg =f"{mesh.name}: " + ", ".join(done) + (f" | fallo: {', '.join(failed)} (ver consola)" if failed else "")
+        if host:
+            paper.ensure_switch(host.find_armature())
+        msg = f"{mesh.name}: " + ", ".join(done) + (f" | fallo: {', '.join(failed)} (ver consola)" if failed else "")
         self.report({"WARNING" if failed else "INFO"}, msg)
         return {"FINISHED"}
 

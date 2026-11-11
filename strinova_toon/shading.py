@@ -354,7 +354,7 @@ def own(obj, key, make):
 
 def ensure_rig(obj, arm):
     # raw FModel skeleton, or the Rigify rig made by "Generar rig"
-    head_bone = next((b for b in ("Bip001-Head", "DEF-spine.006") if b in arm.pose.bones), "Bip001-Head")
+    head_bone = _head_bone(arm) or "Bip001-Head"
     col = obj.users_collection[0]
 
     def new_sun():
@@ -487,7 +487,7 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
 
 # ---------- lighting panel (HSV wheels in the viewport, like Gacha Setup's Genshin panel) ----------
 PANEL = "ST Lighting Panel"  # standalone armature until the character gets a rig, then joined into it
-PICKERS = (("Luz", "st_light_pick", 0.0), ("Ambiente", "st_ambient_pick", 0.30))  # name, scene prop, x offset (m)
+PICKERS = (("Luz", "st_light_pick", 0.0), ("Ambiente", "st_ambient_pick", 0.30))  # name, mesh prop, x offset (m)
 R = 0.08  # wheel radius in metres; drivers divide by it so the shader works with a unit wheel
 VALUE_MAX = 1.5  # value slider range (1 = texture colour, >1 overexposes)
 SLIDER_DX = 0.14
@@ -717,7 +717,7 @@ def _is_rig(arm):
 
 def ensure_lighting_panel(context, near):
     """Lighting controls: HSV wheels (Luz/Ambiente) + value sliders + sun handle. Drivers copy each
-    picker's position into a scene property and the toon shader converts it to RGB."""
+    picker's position into a property of the character's mesh and the toon shader converts it to RGB."""
     char_arm = near.find_armature()
     if "ST Panel" in char_arm.data.bones:
         bind_lighting(context, char_arm, char_arm, near)

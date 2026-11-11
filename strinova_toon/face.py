@@ -1,13 +1,14 @@
-"""Face controls on top of Gacha Setup's face rig: gaze control for the eyeball bones and the
-shape-key sliders sorted into sections (eyes, pupils, brows, mouth, phonemes, other).
+"""Face controls on top of Gacha Setup's face rig: gaze control for the eyeball bones, the
+shape-key sliders sorted into sections (eyes, pupils, brows, mouth, phonemes, other) and, for the
+few models with facial joints (*_SkinJNT), a control per joint.
 
-Strinova's skeleton has no face deformers besides the eyeballs (and eyelashes on some
+Most Strinova skeletons have no face deformers besides the eyeballs (and eyelashes on some
 characters): expressions are shape keys, which only the lobby models carry.
 """
-import bpy, re
+import bpy, re, colorsys
 from math import pi
 from mathutils import Matrix, Vector
-from . import shading
+from . import shading, common
 
 # ---------- shape key sections ----------
 # Names are pinyin + English and vary per character (biyanL, EL_mph48_biyan_L, B_close_L...):
@@ -31,11 +32,16 @@ SIDED = ("Ojos", "Pupilas", "Cejas")
 SIDES = (("", "Ambos"), ("R", "Derecha"), ("L", "Izquierda"))
 SIDE_COLS = 3
 SIDE_GAP = 2 * DX  # between the Derecha and Izquierda blocks
+# one bright hue per sub-group (Blender's preset color sets include near-black ones), stepping 5/12
+# of the wheel so neighbouring frames contrast; 12 = 3 sides x Ojos/Pupilas/Cejas + 3 plain sections
+SUB_COLORS = [colorsys.hsv_to_rgb((i * 5 % 12) / 12, 0.75, 0.95) for i in range(12)]
 SUB_DZ = 0.02  # sub-label above its rows
 SUB_SCALE = 0.007
 FRAME_PAD = 0.006  # margin of each frame around what it holds
 PLAIN_DROP = 0.012  # sections without sub-groups: sliders lowered so their frame clears the title
-SLIDER_HALF_W, SLIDER_HALF_H, SLIDER_TRAVEL = 0.004, 0.009, 0.0101  # Gacha's slider shape at scale 0.009
+SLIDER_TRAVEL = 0.0101  # Gacha's slider: local Z from 0 (key 0) to this (key 1)
+HANDLE_HALF_W, HANDLE_HALF_H = 0.006, 0.0012  # sliding bar
+TICK_HALF_W = 0.0035  # guide marks at the min and max
 
 
 def face_collection(rig, name, row):
@@ -129,7 +135,7 @@ def arrange_face(context, rig, mesh):
     (inside "Face"). Sliders only move, so their drivers (local Z) keep working."""
     keys = slider_keys(mesh)
     if not keys:
-        return {}
+        return
     groups = {}
     for bone, (i, key) in sorted(keys.items(), key=lambda kv: kv[1]):
         groups.setdefault(section_of(key), []).append(bone)
@@ -144,7 +150,7 @@ def arrange_face(context, rig, mesh):
     context.view_layer.objects.active = rig
     bpy.ops.object.mode_set(mode="EDIT")
     eb = rig.data.edit_bones
-    old = [b for b in eb if b.name.startswith(("LABEL-", "FRAME-ST"))]
+    old = [b for b in eb if b.name.startswith(("LABEL-", "FRAME-ST", "GUIDE-ST"))]
     heads = [eb[b].head for b in keys] + [b.head for b in old if b.name.startswith("LABEL-")]
     top = max(h.z for h in heads)
     y = eb[next(iter(keys))].head.y
@@ -175,9 +181,9 @@ def arrange_face(context, rig, mesh):
         h = e.head
         return h.x + x0 * scale, h.z + z0 * scale, h.x + x1 * scale, h.z + z1 * scale
 
-    def slider_rect(e):  # handle at rest plus its travel up
+    def slider_rect(e):  # bar at rest plus its travel up
         h = e.head
-        return h.x - SLIDER_HALF_W, h.z - SLIDER_HALF_H, h.x + SLIDER_HALF_W, h.z + SLIDER_TRAVEL + SLIDER_HALF_H
+        return h.x - HANDLE_HALF_W, h.z - HANDLE_HALF_H, h.x + HANDLE_HALF_W, h.z + SLIDER_TRAVEL + HANDLE_HALF_H
 
     def union(rects, pad):
         return (min(r[0] for r in rects) - pad, min(r[1] for r in rects) - pad,
@@ -194,6 +200,8 @@ def arrange_face(context, rig, mesh):
         frames.append((f.name, rect))
 
     side_rects = {"izquierda": [], "derecha": []}
+    colored = []  # one bone list per sub-group, in reading order
+    guides = []
     for name in left + right:
         pos, subs, width, blocks = layouts[name]
         x, z = starts[name], top - LABEL_DZ  # z: top of the sliders / sub-labels
@@ -209,6 +217,10 @@ def arrange_face(context, rig, mesh):
             sub_bone[text] = lab
         for b, (dx, dz) in pos.items():
             move(eb[b], coll, (x + dx, y, z + dz))
+            g = eb.new(f"GUIDE-ST {b}")  # fixed track behind the bar: same axes, so its Z is the travel
+            g.head, g.tail, g.roll, g.parent = eb[b].head, eb[b].tail, eb[b].roll, root
+            move(g, coll, eb[b].head)
+            guides.append(g.name)
         rects = [label_rect(sub_bone[name], name, LABEL_SCALE)]
         for sub, bones in blocks:  # inner frame per sub-group (or around the whole grid)
             inner = [slider_rect(eb[b]) for b in bones]
@@ -216,12 +228,16 @@ def arrange_face(context, rig, mesh):
                 inner.append(label_rect(sub_bone[sub], sub, SUB_SCALE))
             rect = union(inner, FRAME_PAD)
             add_frame(f"{name} {sub or ''}".strip(), rect, coll)
+            colored.append(list(bones) + [f"GUIDE-ST {b}" for b in bones] + [frames[-1][0]])  # one color each
             rects.append(rect)
         side_rects["izquierda" if name in left else "derecha"].append(union(rects, 0))
     for side, rects in side_rects.items():  # outer frame per side of the face
         if rects:
             add_frame(side, union(rects, FRAME_PAD), face_coll)
     bpy.ops.object.mode_set(mode="OBJECT")
+    for names, rgb in zip(colored, SUB_COLORS):
+        for n in names:
+            common.paint(rig, n, rgb)
     for n, text, scale in labels:
         pb = rig.pose.bones[n]
         pb.custom_shape = text_widget(text)
@@ -235,12 +251,76 @@ def arrange_face(context, rig, mesh):
         pb.use_custom_shape_bone_size = False
         pb.lock_location = pb.lock_rotation = pb.lock_scale = (True, True, True)
         pb.bone.hide_select = True  # decoration: clicks go to the sliders
-    return {k: len(v) for k, v in groups.items()}
+    bar = frame_widget()  # same unit square, as a flat bar
+    for b in keys:
+        pb = rig.pose.bones[b]
+        pb.custom_shape = bar
+        pb.custom_shape_scale_xyz = (2 * HANDLE_HALF_W, 1, 2 * HANDLE_HALF_H)
+        pb.use_custom_shape_bone_size = False
+        pb.custom_shape_wire_width = 2
+    track = guide_widget()
+    for n in guides:
+        pb = rig.pose.bones[n]
+        lim = next((c for c in rig.pose.bones[n[len("GUIDE-ST "):]].constraints if c.type == "LIMIT_LOCATION"), None)
+        pb.custom_shape = track
+        pb.custom_shape_scale_xyz = (TICK_HALF_W, 1, lim.max_z if lim else SLIDER_TRAVEL)  # marks at min and max
+        pb.use_custom_shape_bone_size = False
+        pb.lock_location = pb.lock_rotation = pb.lock_scale = (True, True, True)
+        pb.bone.hide_select = True  # guide only: clicks go to the bar
 
 
 def frame_widget():
     """Unit square in the XZ plane, centred, scaled per frame."""
     return shading._mesh_obj("WGT-ST_frame", [(-0.5, 0, -0.5), (0.5, 0, -0.5), (0.5, 0, 0.5), (-0.5, 0, 0.5)], None, None, None)
+
+
+def guide_widget():
+    """Slider track: a line from 0 to 1 up Z with a mark at each end, scaled per slider to its travel."""
+    verts = [(0, 0, 0), (0, 0, 1), (-1, 0, 0), (1, 0, 0), (-1, 0, 1), (1, 0, 1)]
+    return shading._mesh_obj("WGT-ST_slider_guide", verts, None, None, None, edges=[(0, 1), (2, 3), (4, 5)])
+
+
+# ---------- facial bones ----------
+JNT = "_SkinJNT"  # Maya-style facial joints (Fragrans, Yugiri, Mara lobby; Chiyo's in-match eyelids)
+INNER = ("Tooth", "Tongue")  # inside the mouth: own collection, hidden by default
+JNT_R, LIP_R = 0.003, 0.0018  # widget radius; lip joints sit 4 mm apart
+JNT_SPREAD = 0.004  # upper/lower lip joints are 1 mm apart: push their widgets up/down
+JNT_FORWARD = 0.015  # widgets in front of the skin
+
+
+def add_face_bones(rig, mesh):
+    """Facial deform joints, when the model has them, become controls in "Cara: Huesos": a small
+    circle facing front (custom shape rotated out of each joint's own axes) coloured by side.
+    Models without them keep only the shape key sliders."""
+    weighted = {g.name for g in mesh.vertex_groups if g.name.endswith(JNT)}
+    bones = [b for b in rig.data.bones if b.name.endswith(JNT) and b.name in weighted
+             and not b.name.startswith("Facial_Master")]  # the master moves the whole face
+    if not bones:
+        return
+    shape = shading._mesh_obj("WGT-ST_face_joint", shading._circle(1.0, 16), None, None, None)
+    main, inner = face_collection(rig, "Huesos", 4), face_collection(rig, "Boca interior", 4)
+    inner.is_visible = False
+    colors = {"Left": SUB_COLORS[0], "Right": SUB_COLORS[1]}
+    for b in bones:
+        n = b.name
+        for c in list(b.collections):
+            c.unassign(b)
+        (inner if n.startswith(INNER) or n[:-len(JNT)].endswith(INNER) else main).assign(b)
+        off = Vector((0, -JNT_FORWARD, 0))
+        if re.search(r"(^|_)Up", n):  # Left_UpLid2, Mid_Lip_Up, Up_Tooth
+            off.z += JNT_SPREAD
+        elif re.search(r"(^|_)(Dn|Down)", n):
+            off.z -= JNT_SPREAD
+        if n.startswith("Jaw"):
+            off = Vector((0, -0.05, -0.05))  # at the chin, clear of the nose and lips
+        rot = b.matrix_local.to_3x3().inverted()  # widget axes back to the rig's (faces -Y)
+        pb = rig.pose.bones[n]
+        pb.custom_shape = shape
+        pb.use_custom_shape_bone_size = False
+        pb.custom_shape_scale_xyz = (LIP_R if "Lip" in n else JNT_R,) * 3
+        pb.custom_shape_rotation_euler = rot.to_euler()
+        pb.custom_shape_translation = rot @ off
+        common.paint(rig, n, colors.get(n.split("_")[0], SUB_COLORS[2]))
 
 
 # ---------- gaze ----------
@@ -275,7 +355,7 @@ def add_gaze(context, rig):
     bpy.ops.object.mode_set(mode="OBJECT")
     gaze = face_collection(rig, GAZE, 4)
     hidden = rig.data.collections_all.get("Other") or rig.data.collections.new("Other")
-    ellipse = [(0.06 * v[0] / 0.03, 0, 0.025 * v[2] / 0.03) for v in shading._circle(0.03)]
+    ellipse = [(0.06 * x, 0, 0.025 * z) for x, _, z in shading._circle(1.0)]
     shapes = {GAZE: shading._mesh_obj("WGT-ST_gaze", ellipse, None, None, None),
               "eye": shading._mesh_obj("WGT-ST_gaze_eye", shading._circle(0.012), None, None, None)}
     for n in [GAZE] + [f"{GAZE}.{s}" for s in eyes]:

@@ -133,6 +133,21 @@ try:
     rig["st_physics"] = True
     print(f"[smoke] influencia maxima con la fisica apagada: {live:.3f}")
     assert live == 0, "el interruptor de fisica no apaga las restricciones"
+    joints = [g.name for g in mesh.vertex_groups if g.name.endswith("_SkinJNT") and not g.name.startswith("Facial_Master")]
+    ctrls = [b.name for b in rig.data.bones if any(c.name in ("Cara: Huesos", "Cara: Boca interior") for c in b.collections)]
+    print(f"[smoke] huesos faciales: {len(joints)}, con control: {len(ctrls)}")
+    assert set(joints) <= set(ctrls), "hay huesos faciales sin control"
+    for k in [k for k in rig.keys() if k.startswith("st_show_")]:  # accessory show toggles
+        def count():
+            rig.update_tag()
+            bpy.context.view_layer.update()
+            return len(mesh.evaluated_get(bpy.context.evaluated_depsgraph_get()).data.vertices)
+        shown = count()
+        rig[k] = False
+        hidden = count()
+        rig[k] = True
+        print(f"[smoke] {k}: {shown} -> {hidden} vertices")
+        assert hidden < shown == count(), f"{k} no oculta el accesorio"
     print("[smoke] OK")
 except Exception:
     traceback.print_exc()
