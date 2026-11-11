@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Strinova Toon Setup",
     "author": "juanc",
-    "version": (0, 2, 0),
+    "version": (0, 3, 0),
     "blender": (5, 2, 0),
     "location": "3D View > Sidebar (N) > Strinova",
     "description": "Importa personajes de Strinova (FModel) con toon shading, rig y fisica por constraints",
@@ -13,12 +13,11 @@ bl_info = {
 #   rig.py       Rigify rig via Gacha Setup's NTE rigger, rig fixes, hair/clothes/chest physics
 #   shading.py   toon materials, lighting panel and sun, outline
 #   common.py    helpers shared by all three
-if "bpy" in locals():  # add-on reload: refresh the submodules too
+if "bpy" in locals():  # add-on reload: refresh the submodules too (import_module also loads new ones)
     import importlib
-    for _m in (common, shading, rig, importer):
-        importlib.reload(_m)
-else:
-    from . import common, shading, rig, importer
+    for _n in ("common", "shading", "face", "rig", "importer"):
+        importlib.reload(importlib.import_module(f".{_n}", __package__))
+from . import common, shading, face, rig, importer
 import bpy
 
 
@@ -31,20 +30,26 @@ class STRINOVA_PT_panel(bpy.types.Panel):
     def draw(self, context):
         col = self.layout.column()
         col.operator(importer.STRINOVA_OT_import.bl_idname, icon="IMPORT")
+        opts = col.column(align=True)
+        opts.prop(context.scene, "strinova_do_shading")
+        opts.prop(context.scene, "strinova_do_rig")
         col.separator()
-        col.label(text="Carpeta del personaje (FModel):")
+        col.label(text="Carpeta del personaje:")
         col.prop(context.scene, "strinova_char_dir", text="")
-        col.operator(shading.STRINOVA_OT_setup.bl_idname, icon="SHADING_RENDERED")
+        # shading and rig run inside the import; their operators stay registered for it (and F3)
         mesh = common.target_mesh(context)
         omod = mesh.modifiers.get("ST Outline") if mesh else None
         if omod and omod.node_group:
-            col.prop(shading.outline_input(omod, "Grosor"), "value", text="Grosor contorno")
-        col.operator(rig.STRINOVA_OT_rig.bl_idname, icon="ARMATURE_DATA")
+            col.prop(shading.mod_input(omod, "Grosor"), "value", text="Grosor contorno")
         arm = rig.target_rig(context)
         if arm and rig.PHYSICS_PROP in arm:
-            box = col.box()
-            box.prop(arm, f'["{rig.PHYSICS_PROP}"]', text="Fisica", toggle=True, icon="FORCE_WIND")
-            sliders = box.column()
+            # collapsible sub-panel; its open/closed state is remembered by Blender
+            header, body = col.panel("strinova_physics", default_closed=False)
+            header.label(text=f"Fisica: {arm.name}", icon="ARMATURE_DATA")  # whose physics these are
+            if body is None:
+                return
+            body.prop(arm, f'["{rig.PHYSICS_PROP}"]', text="Fisica")  # checkbox
+            sliders = body.column()
             sliders.active = bool(arm[rig.PHYSICS_PROP])  # greyed out while physics is off
             for prop, _, label in rig.INERTIA_PROPS.values():
                 if prop in arm:
@@ -59,6 +64,10 @@ classes = importer.classes + shading.classes + rig.classes + (STRINOVA_PT_panel,
 def register():
     for c in classes:
         bpy.utils.register_class(c)
+    bpy.types.Scene.strinova_do_shading = bpy.props.BoolProperty(
+        name="Aplicar Toon Shading", default=True, description="Materiales toon, iluminacion y contorno al importar")
+    bpy.types.Scene.strinova_do_rig = bpy.props.BoolProperty(
+        name="Generar rig", default=True, description="Rig con Gacha Setup, cara, mirada y fisica al importar")
     bpy.types.Scene.strinova_char_dir = bpy.props.StringProperty(
         name="Carpeta del personaje",
         subtype="DIR_PATH",
@@ -68,5 +77,7 @@ def register():
 
 def unregister():
     del bpy.types.Scene.strinova_char_dir
+    del bpy.types.Scene.strinova_do_shading
+    del bpy.types.Scene.strinova_do_rig
     for c in reversed(classes):
         bpy.utils.unregister_class(c)

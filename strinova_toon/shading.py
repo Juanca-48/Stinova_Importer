@@ -153,10 +153,10 @@ def hsv_wheel(nt, a, b, value, x, y):
     return cc.outputs[0]
 
 
-def scene_color(nt, name, x, y):
-    # View Layer attribute reads the scene custom property (x, z, value of a panel picker,
-    # copied there by drivers), so one panel drives every material
-    a = node(nt, "ShaderNodeAttribute", x - 400, y, attribute_type="VIEW_LAYER", attribute_name=name)
+def object_color(nt, name, x, y):
+    # Object attribute reads the mesh's custom property (x, z, value of a panel picker, copied there
+    # by drivers), so each character is lit by its own panel
+    a = node(nt, "ShaderNodeAttribute", x - 400, y, attribute_type="OBJECT", attribute_name=name)
     sep = node(nt, "ShaderNodeSeparateXYZ", x - 250, y)
     nt.links.new(a.outputs["Vector"], sep.inputs[0])
     return hsv_wheel(nt, sep.outputs["X"], sep.outputs["Y"], sep.outputs["Z"], x - 100, y)
@@ -165,8 +165,8 @@ def scene_color(nt, name, x, y):
 def toon_mix(nt, lit, base, tint, x, y):
     """Lit side = base * light colour, shadow side = base * shadow tint * ambient colour."""
     with section(nt, "Color de luz y ambiente (panel de iluminacion)", "color"):
-        light = scene_color(nt, "st_light_pick", x - 200, y + 250)
-        ambient = scene_color(nt, "st_ambient_pick", x - 200, y - 250)
+        light = object_color(nt, "st_light_pick", x - 200, y + 250)
+        ambient = object_color(nt, "st_ambient_pick", x - 200, y - 250)
     with section(nt, "Mezcla luz / sombra", "color"):
         shadow = mix_rgb(nt, "MULTIPLY", 1.0, mix_rgb(nt, "MULTIPLY", 1.0, base, tint, x, y - 100), ambient, x + 150, y - 100)
         return mix_rgb(nt, "MIX", lit, shadow, mix_rgb(nt, "MULTIPLY", 1.0, base, light, x, y + 100), x + 300, y)
@@ -184,11 +184,27 @@ def shader_out(nt, color, alpha, out_node, x, y):
 
 
 # ---------- node groups ----------
-def build_toon_group():
-    ng = bpy.data.node_groups.get("ST Toon")
+GROUP_VERSION = 2  # bump when a group changes; 2 = colours and light objects per character
+
+
+def shared_group(name, typ):
+    """(group, already_built). Groups are shared by every character, so an up-to-date one is reused:
+    rebuilding it would unlink the other characters' materials. An outdated one is renamed, not
+    deleted, so the characters already using it keep working."""
+    ng = bpy.data.node_groups.get(name)
+    if ng and ng.get("st_version") == GROUP_VERSION:
+        return ng, True
     if ng:
-        bpy.data.node_groups.remove(ng)
-    ng = bpy.data.node_groups.new("ST Toon", "ShaderNodeTree")
+        ng.name = f"{name} (v{ng.get('st_version', 1)})"
+    ng = bpy.data.node_groups.new(name, typ)
+    ng["st_version"] = GROUP_VERSION
+    return ng, False
+
+
+def build_toon_group():
+    ng, built = shared_group("ST Toon", "ShaderNodeTree")
+    if built:
+        return ng
     sock(ng, "Shader", "OUTPUT", "NodeSocketShader")
     sock(ng, "MatCap UV", "OUTPUT", "NodeSocketVector")
     sock(ng, "Base Color", "INPUT", "NodeSocketColor", (1, 1, 1, 1))
@@ -228,10 +244,9 @@ def build_toon_group():
 
 
 def build_face_group():
-    ng = bpy.data.node_groups.get("ST Face")
-    if ng:
-        bpy.data.node_groups.remove(ng)
-    ng = bpy.data.node_groups.new("ST Face", "ShaderNodeTree")
+    ng, built = shared_group("ST Face", "ShaderNodeTree")
+    if built:
+        return ng
     sock(ng, "Shader", "OUTPUT", "NodeSocketShader")
     sock(ng, "SDF UV", "OUTPUT", "NodeSocketVector")
     sock(ng, "Base Color", "INPUT", "NodeSocketColor", (1, 1, 1, 1))
@@ -284,25 +299,29 @@ def build_face_group():
     return ng
 
 
-def build_vectors_gn(sun, emp):
-    ng = bpy.data.node_groups.get("ST Light Vectors")
-    if ng:
-        bpy.data.node_groups.remove(ng)
-    ng = bpy.data.node_groups.new("ST Light Vectors", "GeometryNodeTree")
+VECTOR_INPUTS = ("Sol", "Cabeza", "Cabeza frente", "Cabeza arriba")  # set on each character's modifier
+
+
+def build_vectors_gn():
+    ng, built = shared_group("ST Light Vectors", "GeometryNodeTree")
+    if built:
+        return ng
     sock(ng, "Geometry", "INPUT", "NodeSocketGeometry")
     sock(ng, "Geometry", "OUTPUT", "NodeSocketGeometry")
+    for n in VECTOR_INPUTS:
+        sock(ng, n, "INPUT", "NodeSocketObject")
     nt = ng
     with section(nt, "Entrada", "in"):
         gi = node(nt, "NodeGroupInput", -800, 0)
     go = node(nt, "NodeGroupOutput", 800, 0)
 
-    def info(ob, y):  # objects set on the node itself; modifier object props failed to assign in 5.2
+    def info(name, y):
         n = node(nt, "GeometryNodeObjectInfo", -550, y, transform_space="ORIGINAL")
-        n.inputs["Object"].default_value = ob
+        nt.links.new(gi.outputs[name], n.inputs["Object"])
         return n
 
-    with section(nt, "Objetos: sol (ST_Light) y empties de la cabeza", "light"):
-        li, ho, hf, hu = info(sun, 300), info(emp["Origin"], 0), info(emp["Forward"], -250), info(emp["Up"], -500)
+    with section(nt, "Objetos: sol y empties de la cabeza (los pone el modificador)", "light"):
+        li, ho, hf, hu = (info(n, y) for n, y in zip(VECTOR_INPUTS, (300, 0, -250, -500)))
     with section(nt, "Vectores: direccion de la luz, frente y arriba de la cabeza", "light"):
         rot = node(nt, "FunctionNodeRotateVector", -300, 300)
         rot.inputs["Vector"].default_value = (0, 0, 1)  # sun shines along its -Z, so +Z points toward the light
@@ -322,21 +341,35 @@ def build_vectors_gn(sun, emp):
     return ng
 
 
-# ---------- scene rig: sun + head empties ----------
-def ensure_rig(arm):
+# ---------- per-character sun + head empties ----------
+# Each character owns its sun, head empties and lighting panel (ID pointers in its mesh's custom
+# properties, so renames don't break them): two characters can be lit differently.
+def own(obj, key, make):
+    """Object stored in obj[key]; made and stored if missing or deleted."""
+    ob = obj.get(key)
+    if not isinstance(ob, bpy.types.Object):
+        ob = obj[key] = make()
+    return ob
+
+
+def ensure_rig(obj, arm):
     # raw FModel skeleton, or the Rigify rig made by "Generar rig"
     head_bone = next((b for b in ("Bip001-Head", "DEF-spine.006") if b in arm.pose.bones), "Bip001-Head")
-    col = bpy.context.scene.collection
-    sun = bpy.data.objects.get("ST_Light")
-    if not sun:
-        sun = bpy.data.objects.new("ST_Light", bpy.data.lights.new("ST_Light", "SUN"))
-        col.objects.link(sun)
+    col = obj.users_collection[0]
+
+    def new_sun():
+        sun = bpy.data.objects.new(f"ST_Light {obj.name}", bpy.data.lights.new(f"ST_Light {obj.name}", "SUN"))
         sun.rotation_euler = (0.9, 0.0, -0.5)  # front, above, slightly to the side
+        return sun
+
+    sun = own(obj, "st_light", new_sun)
+    if not sun.users_collection:
+        col.objects.link(sun)
     head = arm.matrix_world @ arm.pose.bones[head_bone].head
     empties = {}
     for name, off in (("Origin", (0, 0, 0)), ("Forward", (0, -0.1, 0)), ("Up", (0, 0, 0.1))):  # model faces -Y
-        e = bpy.data.objects.get(f"ST_Head{name}") or bpy.data.objects.new(f"ST_Head{name}", None)
-        if e.name not in col.objects:
+        e = own(obj, f"st_head_{name.lower()}", lambda: bpy.data.objects.new(f"ST_Head{name} {obj.name}", None))
+        if not e.users_collection:
             col.objects.link(e)
         e.empty_display_size = 0.02
         e.parent, e.parent_type, e.parent_bone = arm, "BONE", head_bone
@@ -378,7 +411,13 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
     is_face = "FaceShadowMask" in t
     g = node(nt, "ShaderNodeGroup", 200, 0, node_tree=face_group if is_face else toon_group)
     nt.links.new(base.outputs["Color"], g.inputs["Base Color"])
-    nt.links.new(base.outputs["Alpha"], g.inputs["Alpha"])
+    # Paper (Mesh2D) atlases use alpha as the white paper-border mask (0 on the drawing), not as
+    # opacity: channel-packed so the colour isn't premultiplied to black, and alpha left unlinked
+    paper = f"{os.sep}Mesh2D{os.sep}" in base_p
+    if paper:
+        base.image.alpha_mode = "CHANNEL_PACKED"
+    else:
+        nt.links.new(base.outputs["Alpha"], g.inputs["Alpha"])
     nt.links.new(g.outputs["Shader"], out.inputs["Surface"])
     # second instance only provides the SDF/MatCap UV, so the texture -> group link is not a cycle
     g_uv = node(nt, "ShaderNodeGroup", -500, -350, node_tree=g.node_tree, label="UV only")
@@ -443,7 +482,7 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
     translucent = props.get("BlendMode") == "BLEND_Translucent"
     mat.surface_render_method = "BLENDED" if translucent else "DITHERED"
     mat.use_backface_culling = not props.get("TwoSided", False)
-    report[mat.name] = {"tipo": "face" if is_face else "toon", "texturas": used}
+    report[mat.name] = {"tipo": "papel" if paper else "face" if is_face else "toon", "texturas": used}
 
 
 # ---------- lighting panel (HSV wheels in the viewport, like Gacha Setup's Genshin panel) ----------
@@ -457,14 +496,15 @@ COLL = "Iluminacion"
 
 
 def _mesh_obj(name, verts, faces, parent, loc, mat=None, edges=None):
-    me = bpy.data.meshes.get(name) or bpy.data.meshes.new(name)
+    # panel parts (with a parent) are new for each panel; parentless widgets are shared by name
+    me = (None if parent else bpy.data.meshes.get(name)) or bpy.data.meshes.new(name)
     me.clear_geometry()
     if edges is None:
         edges = [] if faces else [(i, (i + 1) % len(verts)) for i in range(len(verts))]
     me.from_pydata(verts, edges, faces or [])
     if mat and not me.materials:
         me.materials.append(mat)
-    ob = bpy.data.objects.get(name) or bpy.data.objects.new(name, me)
+    ob = (None if parent else bpy.data.objects.get(name)) or bpy.data.objects.new(name, me)
     if parent:
         ob.parent, ob.location = parent, loc
         ob.hide_select = ob.hide_render = True  # viewport-only UI
@@ -524,11 +564,11 @@ def _head_bone(arm):
 
 def create_panel(context, near, char_arm):
     """Standalone armature: an HSV wheel + value slider per colour and the sun handle."""
-    sc = context.scene
+    coll = near.users_collection[0]
     arm = bpy.data.armatures.new(PANEL)
     arm.display_type = "WIRE"
     pan = bpy.data.objects.new(PANEL, arm)
-    sc.collection.objects.link(pan)
+    coll.objects.link(pan)
     bb = [near.matrix_world @ mathutils.Vector(c) for c in near.bound_box]
     pan.location = (max(v.x for v in bb) + 0.4, 0.0, max(v.z for v in bb) * 0.8)
     pan.show_in_front = True
@@ -561,13 +601,12 @@ def create_panel(context, near, char_arm):
         disc = _mesh_obj(f"ST Rueda {name}", [(0, 0, 0)] + _circle(R, n), [(0, i + 1, (i + 1) % n + 1) for i in range(n)], pan, (ox, 0.005, 0), wheel_mat)
         h = VALUE_MAX * R
         track = _mesh_obj(f"ST Barra {name}", [(-0.006, 0, 0), (0.006, 0, 0), (0.006, 0, h), (-0.006, 0, h)], [(0, 1, 2, 3)], pan, (ox + SLIDER_DX, 0.005, 0), ramp_mat)
-        label = bpy.data.objects.get(f"ST Texto {name}") or bpy.data.objects.new(f"ST Texto {name}", bpy.data.curves.new(f"ST Texto {name}", "FONT"))
+        label = bpy.data.objects.new(f"ST Texto {name}", bpy.data.curves.new(f"ST Texto {name}", "FONT"))
         label.data.body, label.data.size, label.data.align_x = name, 0.035, "CENTER"
         label.parent, label.location, label.rotation_euler = pan, (ox + 0.03, 0.005, R + 0.04), (1.5708, 0, 0)
         label.hide_select = label.hide_render = True
         for ob in (disc, track, label):
-            if ob.name not in sc.collection.objects:
-                sc.collection.objects.link(ob)
+            coll.objects.link(ob)
     for name, _, _ in PICKERS:
         pan.pose.bones[f"ST {name} valor"].location = (0, 0, R)  # value 1 until a preset is applied
     return pan
@@ -577,13 +616,15 @@ def merge_panel(context, pan, rig):
     """Join the panel into the character rig (like Gacha Setup does with Genshin's panel), so
     lights animate in the same action as the character."""
     ui = list(pan.children)
-    ui_mw = {c: c.matrix_world.copy() for c in ui}
+    # offset from the panel origin (= ST Panel's head), not matrix_world: the panel was out of the
+    # scene while Gacha rigged, so its children's world matrices are stale (~0.5-0.8 m behind)
+    ui_off = {c: c.matrix_parent_inverse @ c.matrix_basis for c in ui}
     locs = {pb.name: pb.location.copy() for pb in pan.pose.bones}
     pan_mw = pan.matrix_world.copy()
     pan.parent = None
     pan.matrix_world = pan_mw
     if not pan.users_collection:
-        context.scene.collection.objects.link(pan)
+        rig.users_collection[0].objects.link(pan)
     context.view_layer.update()
     for o in context.view_layer.objects:
         o.select_set(False)
@@ -600,10 +641,11 @@ def merge_panel(context, pan, rig):
     for name, loc in locs.items():
         rig.pose.bones[name].location = loc
     context.view_layer.update()
+    panel_mw = rig.matrix_world @ rig.pose.bones["ST Panel"].matrix
     for c in ui:
         c.parent, c.parent_type, c.parent_bone = rig, "BONE", "ST Panel"
         context.view_layer.update()
-        c.matrix_world = ui_mw[c]
+        c.matrix_world = panel_mw @ ui_off[c]
     coll = rig.data.collections_all.get(COLL) or rig.data.collections.new(COLL)
     for b in rig.data.bones:
         if b.name.startswith("ST "):
@@ -613,9 +655,9 @@ def merge_panel(context, pan, rig):
     coll.is_visible = True
 
 
-def bind_lighting(context, arm, char_arm):
-    """Pose settings, limits, drivers and sun constraints for the lighting controls in `arm`."""
-    sc = context.scene
+def bind_lighting(context, arm, char_arm, mesh):
+    """Pose settings, limits, drivers and sun constraints for the lighting controls in `arm`. The
+    drivers copy each picker into `mesh`'s custom properties, which only its materials read."""
     ring = _mesh_obj("WGT-ST_picker", _circle(0.012), None, None, None)
     bar = _mesh_obj("WGT-ST_slider", [(-0.02, 0, 0), (0.02, 0, 0)], None, None, None)
     circ = _circle(0.03, 24)
@@ -644,11 +686,11 @@ def bind_lighting(context, arm, char_arm):
         s.lock_rotation = s.lock_scale = (True, True, True)
         lim = s.constraints.new("LIMIT_LOCATION")
         lim.owner_space, lim.use_min_z, lim.use_max_z, lim.min_z, lim.max_z = "LOCAL", True, True, 0.0, VALUE_MAX * R
-        if prop not in sc:
-            sc[prop] = (0.0, 0.0, 1.0)
+        if prop not in mesh:
+            mesh[prop] = (0.0, 0.0, 1.0)
         for i, (bone, ch) in enumerate(((p.name, "LOC_X"), (p.name, "LOC_Z"), (s.name, "LOC_Z"))):
-            sc.driver_remove(f'["{prop}"]', i)
-            drv = sc.driver_add(f'["{prop}"]', i).driver
+            mesh.driver_remove(f'["{prop}"]', i)
+            drv = mesh.driver_add(f'["{prop}"]', i).driver
             drv.type, drv.expression = "SCRIPTED", f"var / {R}"  # simple expression: no auto-run needed
             t = drv.variables.new()
             t.name, t.type = "var", "TRANSFORMS"
@@ -658,7 +700,7 @@ def bind_lighting(context, arm, char_arm):
     sol.custom_shape = sun_w
     sol.lock_rotation = sol.lock_scale = (True, True, True)
     # light shines from the sun handle towards the head; the GN modifier reads ST_Light's rotation
-    sun = bpy.data.objects.get("ST_Light")
+    sun = mesh.get("st_light")
     hb = _head_bone(char_arm)
     if sun and hb:
         for c in list(sun.constraints):
@@ -678,15 +720,16 @@ def ensure_lighting_panel(context, near):
     picker's position into a scene property and the toon shader converts it to RGB."""
     char_arm = near.find_armature()
     if "ST Panel" in char_arm.data.bones:
-        bind_lighting(context, char_arm, char_arm)
+        bind_lighting(context, char_arm, char_arm, near)
         return char_arm
-    pan = bpy.data.objects.get(PANEL) or create_panel(context, near, char_arm)
+    pan = own(near, "st_panel", lambda: create_panel(context, near, char_arm))
     if _is_rig(char_arm):
+        del near["st_panel"]  # before the join: the pointer would keep the joined panel as an orphan
         merge_panel(context, pan, char_arm)
-        bind_lighting(context, char_arm, char_arm)
+        bind_lighting(context, char_arm, char_arm, near)
         return char_arm
     attach_panel(context, pan, char_arm)
-    bind_lighting(context, pan, char_arm)
+    bind_lighting(context, pan, char_arm, near)
     return pan
 
 
@@ -792,11 +835,11 @@ def ensure_outline(obj):
         me.materials.append(outline_material(src))
     mod = obj.modifiers.get("ST Outline") or obj.modifiers.new("ST Outline", "NODES")
     mod.node_group = build_outline_gn()
-    outline_input(mod, "Primer slot de contorno").value = len(originals)
+    mod_input(mod, "Primer slot de contorno").value = len(originals)
     return mod
 
 
-def outline_input(mod, name):
+def mod_input(mod, name):
     # Blender 5.x: modifier inputs live in mod.properties.inputs.<identifier>.value
     return getattr(mod.properties.inputs, mod.node_group.interface.items_tree[name].identifier)
 
@@ -806,11 +849,13 @@ def run(obj, char_dir):
     mesh_skin = skin_of(obj.name, "")
     tex_idx = index_files(char_dir, ".png")
     json_idx = index_files(char_dir, ".json")
-    sun, emp = ensure_rig(arm)
-    ensure_lighting_panel(bpy.context, obj)  # after ensure_rig: it aims ST_Light with the sun handle
-    toon_g, face_g, gn = build_toon_group(), build_face_group(), build_vectors_gn(sun, emp)
+    sun, emp = ensure_rig(obj, arm)
+    ensure_lighting_panel(bpy.context, obj)  # after ensure_rig: it aims the sun with the sun handle
+    toon_g, face_g = build_toon_group(), build_face_group()
     mod = obj.modifiers.get("ST Light Vectors") or obj.modifiers.new("ST Light Vectors", "NODES")
-    mod.node_group = gn
+    mod.node_group = build_vectors_gn()
+    for name, ob in zip(VECTOR_INPUTS, (sun, emp["Origin"], emp["Forward"], emp["Up"])):
+        mod_input(mod, name).value = ob
     report = {}
     for slot in obj.material_slots:
         mat = slot.material
@@ -831,7 +876,7 @@ def run(obj, char_dir):
 def lighting_panel_aside(context, obj):
     """Gacha Setup rigs the wrong armature if our standalone lighting panel is in the scene: take it
     out while the rigger runs, then put it back where it was and join it into the new rig."""
-    pan = bpy.data.objects.get(PANEL)
+    pan = obj.get("st_panel")
     colls = list(pan.users_collection) if pan else []
     mw = pan.matrix_world.copy() if pan else None  # its parent skeleton gets moved/replaced
     for c in colls:

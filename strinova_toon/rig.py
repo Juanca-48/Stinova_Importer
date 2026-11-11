@@ -1,8 +1,8 @@
 """Rig: Rigify rig through Gacha Setup's NTE rigger, Strinova-specific fixes on top of it, and the
 constraint 'physics' for hair, clothes and chest."""
-import bpy, re
+import bpy, re, contextlib
 from .common import target_mesh
-from . import shading
+from . import shading, face
 
 # ---------- rig + physics ----------
 PHYS_COLLECTIONS = ("Hair", "Clothes")
@@ -161,6 +161,56 @@ def fix_breasts(context, rig):
     return sides
 
 
+@contextlib.contextmanager
+def others_aside(context, obj):
+    """Gacha's NTE rigger works on the whole scene: it rebinds every mesh's Armature modifier to the
+    new rig and, not finding the rig by name, post-processes the first armature in the scene (with
+    two characters it rebuilt the first one's rig). Unlink everything that isn't this character
+    while it runs, then put it back."""
+    arm = obj.find_armature()
+    pan = obj.get("st_panel")
+    keep = {obj, arm, pan, *arm.children_recursive, *(pan.children_recursive if pan else ())}
+    keep |= {v for v in obj.values() if isinstance(v, bpy.types.Object)}  # its sun and head empties
+    sc = context.scene
+    # whole collections where possible: Gacha deletes another character's WGTS_* collection if it
+    # finds it empty
+    def has_keep(c):
+        return any(o in keep for o in c.all_objects)
+    parked = [c for c in sc.collection.children if not has_keep(c)]
+    for c in parked:
+        sc.collection.children.unlink(c)
+    moved = [(c, o) for c in (sc.collection, *sc.collection.children_recursive) for o in c.objects if o not in keep]
+    for c, o in moved:
+        c.objects.unlink(o)
+    # its face rig takes the first mesh with shape keys in bpy.data, scene or not: point it at this one
+    from setup_wizard.character_rig_setup import nte_face_rig
+    find_face = nte_face_rig.find_face_mesh
+    nte_face_rig.find_face_mesh = lambda: obj
+    # ...and deletes every WGT-Face_* object first, the other characters' face sliders included
+    face_wgts = [(o, o.name) for o in bpy.data.objects if o.name.startswith("WGT-Face_")]
+    for o, name in face_wgts:
+        o.name = "ST " + name
+    try:
+        yield
+    finally:
+        nte_face_rig.find_face_mesh = find_face
+        for o, name in face_wgts:
+            o.name = name  # gets .001 if the new face made one with the same name
+        for c in parked:
+            try:
+                sc.collection.children.link(c)
+            except ReferenceError:  # removed by Gacha; its objects are relinked below if they were loose
+                pass
+        for c, o in moved:
+            try:
+                c.objects.link(o)
+            except RuntimeError:  # already linked
+                pass
+            except ReferenceError:  # Gacha removed the collection
+                if not o.users_collection:
+                    sc.collection.objects.link(o)
+
+
 class STRINOVA_OT_rig(bpy.types.Operator):
     bl_idname = "strinova.rig_physics"
     bl_label = "Generar rig"
@@ -190,7 +240,7 @@ class STRINOVA_OT_rig(bpy.types.Operator):
         arm.select_set(True)
         # the lighting panel is shading's business: it steps aside while Gacha's rigger runs and
         # joins the new rig afterwards
-        with shading.lighting_panel_aside(context, obj):
+        with others_aside(context, obj), shading.lighting_panel_aside(context, obj):
             # NTE shares Strinova's hyphenated Bip001 skeleton, so Gacha Setup's NTE rigger maps it as is
             bpy.ops.hoyoverse.rig_character(game_type="NEVERNESS_TO_EVERNESS")
             rig = obj.find_armature()
@@ -205,6 +255,13 @@ class STRINOVA_OT_rig(bpy.types.Operator):
                     b.bbone_segments = 1
             fix_finger_curl(rig)
             fix_breasts(context, rig)
+            face.add_gaze(context, rig)
+            face.arrange_face(context, rig, obj)
+            # head follows Gacha's head-controller (the target in front of the face) from the start;
+            # the toggle stays on the gear bone (plate-settings) to turn it off
+            settings = rig.pose.bones.get("plate-settings")
+            if settings and "Use Head Controller" in settings:
+                settings["Use Head Controller"] = 1
         n = apply_inertia(rig)
         self.report({"INFO"}, f"Rig listo: {rig.name}, {n} cadenas con fisica")
         return {"FINISHED"}
