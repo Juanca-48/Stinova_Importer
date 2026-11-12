@@ -184,20 +184,22 @@ def shader_out(nt, color, alpha, out_node, x, y):
 
 
 # ---------- node groups ----------
-GROUP_VERSION = 2  # bump when a group changes; 2 = colours and light objects per character
+GROUP_VERSION = 2  # bump when a group changes; 2 = colours and light objects per character (and the outline
+#   group's first version mark: older unmarked ST Outline groups, without the no-COL0 fallback, get rebuilt)
 
 
-def shared_group(name, typ):
+def shared_group(name, typ, version=None):
     """(group, already_built). Groups are shared by every character, so an up-to-date one is reused:
     rebuilding it would unlink the other characters' materials. An outdated one is renamed, not
     deleted, so the characters already using it keep working."""
+    version = version or GROUP_VERSION
     ng = bpy.data.node_groups.get(name)
-    if ng and ng.get("st_version") == GROUP_VERSION:
+    if ng and ng.get("st_version") == version:
         return ng, True
     if ng:
         ng.name = f"{name} (v{ng.get('st_version', 1)})"
     ng = bpy.data.node_groups.new(name, typ)
-    ng["st_version"] = GROUP_VERSION
+    ng["st_version"] = version
     return ng, False
 
 
@@ -398,6 +400,32 @@ def tex(nt, path, colorspace, x, y, vector=None):
     return n
 
 
+def normal_nodes(nt, path, groups):
+    """Normal map from `path` (or the geometry's normal without one) into the Normal input of each
+    group node. Returns (nodes, frame label)."""
+    if not path:
+        geo = node(nt, "ShaderNodeNewGeometry", -60, -150)
+        for g in groups:
+            nt.links.new(geo.outputs["Normal"], g.inputs["Normal"])
+        return [geo], "Normal de la geometria (sin normal map)"
+    n_img = tex(nt, path, "Non-Color", -800, -150)
+    # UE normal maps are DirectX style: flip green for Blender
+    sep = node(nt, "ShaderNodeSeparateColor", -550, -150)
+    inv = node(nt, "ShaderNodeMath", -380, -150, operation="SUBTRACT")
+    inv.inputs[0].default_value = 1.0
+    comb = node(nt, "ShaderNodeCombineColor", -220, -150)
+    nm = node(nt, "ShaderNodeNormalMap", -60, -150, uv_map="UV0")
+    nt.links.new(n_img.outputs["Color"], sep.inputs[0])
+    nt.links.new(sep.outputs[0], comb.inputs[0])
+    nt.links.new(sep.outputs[1], inv.inputs[1])
+    nt.links.new(inv.outputs[0], comb.inputs[1])
+    nt.links.new(sep.outputs[2], comb.inputs[2])
+    nt.links.new(comb.outputs[0], nm.inputs["Color"])
+    for g in groups:
+        nt.links.new(nm.outputs[0], g.inputs["Normal"])
+    return [n_img, sep, inv, comb, nm], "Normal map (DirectX a Blender: canal verde invertido)"
+
+
 def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report):
     skin = skin_of(mat.name, mesh_skin)
     t = {k: v["ObjectName"].split("'")[1] for k, v in data.get("Textures", {}).items() if v}  # FModel writes null for unresolved textures
@@ -437,29 +465,9 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
         mv = sca.get("MiddleValue", 0.15)
         g.inputs["Middle Value"].default_value = mv if mv > -1 else 0.15
         nrm_p = pick(tex_idx, t.get("NormalMap", ""), skin) if sw.get("NeedNormalMap") else None
+        normal, normal_label = normal_nodes(nt, nrm_p, (g, g_uv))
         if nrm_p:
-            n_img = tex(nt, nrm_p, "Non-Color", -800, -150)
-            # UE normal maps are DirectX style: flip green for Blender
-            sep = node(nt, "ShaderNodeSeparateColor", -550, -150)
-            inv = node(nt, "ShaderNodeMath", -380, -150, operation="SUBTRACT")
-            inv.inputs[0].default_value = 1.0
-            comb = node(nt, "ShaderNodeCombineColor", -220, -150)
-            nm = node(nt, "ShaderNodeNormalMap", -60, -150, uv_map="UV0")
-            nt.links.new(n_img.outputs["Color"], sep.inputs[0])
-            nt.links.new(sep.outputs[0], comb.inputs[0])
-            nt.links.new(sep.outputs[1], inv.inputs[1])
-            nt.links.new(inv.outputs[0], comb.inputs[1])
-            nt.links.new(sep.outputs[2], comb.inputs[2])
-            nt.links.new(comb.outputs[0], nm.inputs["Color"])
-            nt.links.new(nm.outputs[0], g.inputs["Normal"])
-            nt.links.new(nm.outputs[0], g_uv.inputs["Normal"])
             used.append(os.path.basename(nrm_p))
-            normal, normal_label = [n_img, sep, inv, comb, nm], "Normal map (DirectX a Blender: canal verde invertido)"
-        else:
-            geo = node(nt, "ShaderNodeNewGeometry", -60, -150)
-            nt.links.new(geo.outputs["Normal"], g.inputs["Normal"])
-            nt.links.new(geo.outputs["Normal"], g_uv.inputs["Normal"])
-            normal, normal_label = [geo], "Normal de la geometria (sin normal map)"
         mc_p = pick(tex_idx, t.get("MatCapTexture", ""), skin) if sw.get("NeedMatCap") else None
         if mc_p:
             mc = tex(nt, mc_p, "sRGB", -200, -450, g_uv.outputs["MatCap UV"])
@@ -753,11 +761,11 @@ OUTLINE_WIDTH = 0.002  # metres; ~1.5 px at full-body 1080p like the reference v
 
 def build_outline_gn():
     """Duplicate the deformed mesh, push it out along the normal by width * COL0.alpha (the game's
-    outline mask: 0 on face/eyes), flip it and give each face its material's outline slot."""
-    ng = bpy.data.node_groups.get("ST Outline")
-    if ng:
+    outline mask: 0 on face/eyes), flip it and give each face its material's outline slot. Meshes
+    without COL0 (weapons) get the outline everywhere."""
+    ng, built = shared_group("ST Outline", "GeometryNodeTree")
+    if built:
         return ng
-    ng = bpy.data.node_groups.new("ST Outline", "GeometryNodeTree")
     sock(ng, "Geometry", "INPUT", "NodeSocketGeometry")
     sock(ng, "Geometry", "OUTPUT", "NodeSocketGeometry")
     w = sock(ng, "Grosor", "INPUT", "NodeSocketFloat", OUTLINE_WIDTH)
@@ -770,7 +778,9 @@ def build_outline_gn():
     col.inputs["Name"].default_value = "COL0"
     sep = node(nt, "FunctionNodeSeparateColor", -800, -300)
     nt.links.new(col.outputs["Attribute"], sep.inputs[0])
-    mask = sep.outputs["Alpha"]
+    # mask = COL0.alpha where the mesh has COL0, else 1: alpha * exists + (1 - exists)
+    mask = math(nt, "ADD", math(nt, "MULTIPLY", sep.outputs["Alpha"], col.outputs["Exists"], -650, -350),
+                math(nt, "SUBTRACT", 1.0, col.outputs["Exists"], -650, -450), -500, -400)
     keep = node(nt, "GeometryNodeDeleteGeometry", -600, 100, domain="FACE")
     nt.links.new(gi.outputs["Geometry"], keep.inputs["Geometry"])
     nt.links.new(math(nt, "LESS_THAN", mask, 0.01, -700, -100), keep.inputs["Selection"])
@@ -899,6 +909,195 @@ def run(obj, char_dir):
             continue
         setup_material(mat, data, tex_idx, mesh_skin, face_g, toon_g, report)
     ensure_outline(obj)
+    return report
+
+
+# ---------- weapons ----------
+# Weapons use the game's MSM_Weapon shading: colour (_D), normal (_N), a packed _RMO texture and a
+# metal matcap. Measured over several skins, the _RMO channels are R = emissive mask (black almost
+# everywhere), G = roughness, B = metal (near 0 on painted skins like M82 S105): not occlusion, which
+# blackened those skins. Here they get the characters' toon (same sun, same panel colours) so a weapon
+# matches the hand that holds it, plus a matcap shine where RMO marks polished metal.
+WEAPON_CLIP = 0.3333  # OpacityMaskClipValue of the weapon materials
+WEAPON_VERSION = 3  # its own version: 3 = RMO read as emissive / roughness / metal
+
+
+def build_weapon_group():
+    ng, built = shared_group("ST Weapon", "ShaderNodeTree", WEAPON_VERSION)
+    if built:
+        return ng
+    sock(ng, "Shader", "OUTPUT", "NodeSocketShader")
+    sock(ng, "MatCap UV", "OUTPUT", "NodeSocketVector")
+    sock(ng, "Base Color", "INPUT", "NodeSocketColor", (1, 1, 1, 1))
+    sock(ng, "Alpha", "INPUT", "NodeSocketFloat", 1.0)
+    sock(ng, "Normal", "INPUT", "NodeSocketVector").hide_value = True
+    sock(ng, "RMO", "INPUT", "NodeSocketColor", (0, 1, 0, 1))  # no glow, rough, no metal
+    sock(ng, "MatCap", "INPUT", "NodeSocketColor", (0, 0, 0, 1))
+    sock(ng, "Brillo metal", "INPUT", "NodeSocketFloat", 0.6)
+    sock(ng, "Emision", "INPUT", "NodeSocketFloat", 0.0)  # 1 when the material has EnableEmissive
+    sock(ng, "Shadow Tint", "INPUT", "NodeSocketColor", SHADOW_TINT)
+    sock(ng, "Middle Value", "INPUT", "NodeSocketFloat", 0.15)
+    sock(ng, "Softness", "INPUT", "NodeSocketFloat", 0.03)
+    nt = ng
+    with section(nt, "Entradas", "in"):
+        gi = node(nt, "NodeGroupInput", -900, 0)
+    go = node(nt, "NodeGroupOutput", 900, 0)
+    with section(nt, "Luz: N.L con la direccion del sol (lado iluminado)", "light"):
+        L = attr(nt, "lightDir", -700, 300)
+        N = vmath(nt, "NORMALIZE", gi.outputs["Normal"], None, -700, 100).outputs[0]
+        ndl = vmath(nt, "DOT_PRODUCT", N, L, -400, 200).outputs["Value"]
+        lit = soft_step(nt, ndl, gi.outputs["Middle Value"], gi.outputs["Softness"], -200, 200)
+    with section(nt, "UV del MatCap (normal en espacio de camara)", "tex"):
+        vt = node(nt, "ShaderNodeVectorTransform", -400, -250, vector_type="NORMAL", convert_from="WORLD", convert_to="CAMERA")
+        nt.links.new(N, vt.inputs[0])
+        ma = node(nt, "ShaderNodeVectorMath", -200, -250, operation="MULTIPLY_ADD")
+        nt.links.new(vt.outputs[0], ma.inputs[0])
+        ma.inputs[1].default_value = ma.inputs[2].default_value = (0.5, 0.5, 0.5)
+        nt.links.new(ma.outputs[0], go.inputs["MatCap UV"])
+    with section(nt, "RMO: R emision, G rugosidad, B metal", "tex"):
+        rmo = node(nt, "ShaderNodeSeparateColor", -400, -450)
+        nt.links.new(gi.outputs["RMO"], rmo.inputs[0])
+    base = gi.outputs["Base Color"]
+    col = toon_mix(nt, lit, base, gi.outputs["Shadow Tint"], 100, 100)
+    with section(nt, "Brillo del metal (matcap donde el metal es pulido) y emision", "color"):
+        polish = math(nt, "MULTIPLY", rmo.outputs[2], math(nt, "SUBTRACT", 1.0, rmo.outputs[1], 300, -300), 450, -300)
+        shine = math(nt, "MULTIPLY", polish, gi.outputs["Brillo metal"], 600, -300)
+        col = mix_rgb(nt, "ADD", shine, col, gi.outputs["MatCap"], 650, 100)
+        glow = math(nt, "MULTIPLY", rmo.outputs[0], gi.outputs["Emision"], 600, -450)
+        col = mix_rgb(nt, "ADD", glow, col, base, 800, 100)
+    with section(nt, "Salida (emision + recorte de transparencia)", "out", extra=(go,)):
+        clip = math(nt, "GREATER_THAN", gi.outputs["Alpha"], WEAPON_CLIP, 500, -150)
+        shader_out(nt, col, clip, go, 650, -150)
+    arrange_sections(nt)
+    return ng
+
+
+def setup_weapon_material(mat, data, tex_idx, weapon_group, report):
+    t = {k: v["ObjectName"].split("'")[1] for k, v in data.get("Textures", {}).items() if v}
+    m = re.search(r"_(\d{3})(?:_|$)", mat.name)  # MI_Weap_AKM_104_01: skin S104
+    skin = f"S{m.group(1)}" if m else ""
+    base_p = next((p for k in ("PM_Diffuse", "BaseColor_LOW", "BaseMap") for p in [pick(tex_idx, t.get(k, ""), skin)] if p), None)
+    props = data.get("Properties", {}).get("BasePropertyOverrides", {})
+    if not base_p:
+        tint = data.get("Colors", {}).get("BaseColorTint")
+        if tint and props.get("BlendMode") == "BLEND_Translucent":
+            glass_material(mat, tint, data.get("Scalars", {}).get("OpacityScale", 0.5), report)
+        else:
+            report[mat.name] = "sin textura de color, se deja igual"
+        return
+    nt = mat.node_tree
+    nt.nodes.clear()
+    out = node(nt, "ShaderNodeOutputMaterial", 600, 0)
+    base = tex(nt, base_p, "sRGB", -600, 200)
+    g = node(nt, "ShaderNodeGroup", 200, 0, node_tree=weapon_group)
+    # second instance only provides the MatCap UV, so the texture -> group link is not a cycle
+    g_uv = node(nt, "ShaderNodeGroup", -500, -350, node_tree=weapon_group, label="UV only")
+    nt.links.new(base.outputs["Color"], g.inputs["Base Color"])
+    nt.links.new(base.outputs["Alpha"], g.inputs["Alpha"])
+    nt.links.new(g.outputs["Shader"], out.inputs["Surface"])
+    used = [os.path.basename(base_p)]
+    nrm_p = pick(tex_idx, t.get("PM_Normals") or t.get("N", ""), skin)
+    normal, normal_label = normal_nodes(nt, nrm_p, (g, g_uv))
+    if nrm_p:
+        used.append(os.path.basename(nrm_p))
+    extra = []
+    rmo_p = pick(tex_idx, t.get("RM") or t.get("PM_SpecularMasks", ""), skin)
+    if rmo_p:
+        n = tex(nt, rmo_p, "Non-Color", -200, -450)
+        nt.links.new(n.outputs["Color"], g.inputs["RMO"])
+        used.append(os.path.basename(rmo_p))
+        extra.append(("RMO: emision, rugosidad, metal", n))
+    mc_p = pick(tex_idx, t.get("MatCapTex", ""), skin)
+    if mc_p:
+        n = tex(nt, mc_p, "sRGB", -200, -700, g_uv.outputs["MatCap UV"])
+        nt.links.new(n.outputs["Color"], g.inputs["MatCap"])
+        used.append(os.path.basename(mc_p))
+        extra.append(("MatCap del metal", n))
+    frame(nt, "Textura base (color + alpha)", "tex", [base])
+    frame(nt, normal_label, "tex", normal)
+    frame(nt, "UV calculadas (MatCap)", "light", [g_uv])
+    for label, n in extra:
+        frame(nt, label, "tex", [n])
+    if data.get("Switches", {}).get("EnableEmissive"):
+        g.inputs["Emision"].default_value = 1.0
+    frame(nt, "Toon de arma (ST Weapon)", "color", [g])
+    frame(nt, "Salida", "out", [out])
+    arrange_sections(nt)
+    mat.surface_render_method = "BLENDED" if props.get("BlendMode") == "BLEND_Translucent" else "DITHERED"
+    mat.use_backface_culling = not props.get("TwoSided", False)
+    report[mat.name] = {"tipo": "arma", "texturas": used}
+
+
+def glass_material(mat, tint, opacity, report):
+    """Sight lenses: no texture, a tint and half transparent, unlit in the game (MSM_Unlit)."""
+    nt = mat.node_tree
+    nt.nodes.clear()
+    out = node(nt, "ShaderNodeOutputMaterial", 600, 0)
+    em = node(nt, "ShaderNodeEmission", 0, 100)
+    em.inputs["Color"].default_value = (tint["R"], tint["G"], tint["B"], 1.0)
+    tr = node(nt, "ShaderNodeBsdfTransparent", 0, -60)
+    mx = node(nt, "ShaderNodeMixShader", 300, 0)
+    mx.inputs[0].default_value = opacity
+    nt.links.new(tr.outputs[0], mx.inputs[1])
+    nt.links.new(em.outputs[0], mx.inputs[2])
+    nt.links.new(mx.outputs[0], out.inputs["Surface"])
+    mat.surface_render_method = "BLENDED"
+    mat.use_backface_culling = False
+    report[mat.name] = {"tipo": "cristal", "texturas": []}
+
+
+@functools.lru_cache(maxsize=4)
+def _cached_index(root, ext):
+    return index_files(root, ext)
+
+
+def shade_weapon(context, meshes, assets_root, host=None):
+    """Toon shading for a weapon's meshes. Lit by `host` (a character mesh: its sun and its panel
+    colours, so the weapon matches the hand) or, without one, by a sun of its own."""
+    tex_idx, json_idx = _cached_index(assets_root, ".png"), _cached_index(assets_root, ".json")
+    weapon_g = build_weapon_group()
+    if not (host and isinstance(host.get("st_light"), bpy.types.Object)):
+        host = None
+
+        def new_sun():
+            ob = bpy.data.objects.new(f"ST_Light {meshes[0].name}", bpy.data.lights.new(f"ST_Light {meshes[0].name}", "SUN"))
+            ob.rotation_euler = (0.9, 0.0, -0.5)  # front, above, slightly to the side
+            meshes[0].users_collection[0].objects.link(ob)
+            return ob
+
+    sun = host["st_light"] if host else own(meshes[0], "st_light", new_sun)
+    report = {}
+    for m in meshes:
+        m["st_light"] = sun
+        m["st_weapon"] = True
+        if host:
+            m["st_weapon_host"] = host  # a weapon picked later as the light source passes on this one
+        mod = m.modifiers.get("ST Light Vectors") or m.modifiers.new("ST Light Vectors", "NODES")
+        mod.node_group = build_vectors_gn()
+        mod_input(mod, "Sol").value = sun
+        for prop in ("st_light_pick", "st_ambient_pick"):  # light / ambient colours: the host's panel, or white
+            follow = bool(host) and prop in host
+            m[prop] = tuple(host[prop]) if follow else (0.0, 0.0, 1.0)
+            for i in range(3):
+                m.driver_remove(f'["{prop}"]', i)
+                if follow:
+                    d = m.driver_add(f'["{prop}"]', i).driver
+                    d.type = "SCRIPTED"
+                    v = d.variables.new()
+                    v.name, v.type = "v", "SINGLE_PROP"
+                    v.targets[0].id, v.targets[0].data_path = host, f'["{prop}"][{i}]'
+                    d.expression = "v"
+        for slot in m.material_slots:
+            mat = slot.material
+            if not mat or mat.name.endswith(OUTLINE_SUFFIX):
+                continue
+            jp = pick(json_idx, re.sub(r"\.\d{3}$", "", mat.name), "")
+            if not jp:
+                report[mat.name] = "sin datos de material, se deja igual"
+                continue
+            with open(jp, encoding="utf-8") as fh:
+                setup_weapon_material(mat, json.load(fh), tex_idx, weapon_g, report)
+        ensure_outline(m)
     return report
 
 
