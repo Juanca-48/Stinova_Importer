@@ -1056,6 +1056,27 @@ def shade_weapon(context, meshes, assets_root, host=None):
     colours, so the weapon matches the hand) or, without one, by a sun of its own."""
     tex_idx, json_idx = _cached_index(assets_root, ".png"), _cached_index(assets_root, ".json")
     weapon_g = build_weapon_group()
+    light_weapon(meshes, host)
+    report = {}
+    for m in meshes:
+        for slot in m.material_slots:
+            mat = slot.material
+            if not mat or mat.name.endswith(OUTLINE_SUFFIX):
+                continue
+            jp = pick(json_idx, re.sub(r"\.\d{3}$", "", mat.name), "")
+            if not jp:
+                report[mat.name] = "sin datos de material, se deja igual"
+                continue
+            with open(jp, encoding="utf-8") as fh:
+                setup_weapon_material(mat, json.load(fh), tex_idx, weapon_g, report)
+        ensure_outline(m)
+    return report
+
+
+def light_weapon(meshes, host=None):
+    """Light a weapon's meshes with `host`'s sun and panel colours (a character mesh), or, without
+    one, with a sun of their own and white light. Called on import and again when the weapon is
+    connected to a character's hand."""
     if not (host and isinstance(host.get("st_light"), bpy.types.Object)):
         host = None
 
@@ -1066,12 +1087,13 @@ def shade_weapon(context, meshes, assets_root, host=None):
             return ob
 
     sun = host["st_light"] if host else own(meshes[0], "st_light", new_sun)
-    report = {}
     for m in meshes:
         m["st_light"] = sun
         m["st_weapon"] = True
         if host:
             m["st_weapon_host"] = host  # a weapon picked later as the light source passes on this one
+        elif "st_weapon_host" in m:
+            del m["st_weapon_host"]
         mod = m.modifiers.get("ST Light Vectors") or m.modifiers.new("ST Light Vectors", "NODES")
         mod.node_group = build_vectors_gn()
         mod_input(mod, "Sol").value = sun
@@ -1087,18 +1109,6 @@ def shade_weapon(context, meshes, assets_root, host=None):
                     v.name, v.type = "v", "SINGLE_PROP"
                     v.targets[0].id, v.targets[0].data_path = host, f'["{prop}"][{i}]'
                     d.expression = "v"
-        for slot in m.material_slots:
-            mat = slot.material
-            if not mat or mat.name.endswith(OUTLINE_SUFFIX):
-                continue
-            jp = pick(json_idx, re.sub(r"\.\d{3}$", "", mat.name), "")
-            if not jp:
-                report[mat.name] = "sin datos de material, se deja igual"
-                continue
-            with open(jp, encoding="utf-8") as fh:
-                setup_weapon_material(mat, json.load(fh), tex_idx, weapon_g, report)
-        ensure_outline(m)
-    return report
 
 
 @contextlib.contextmanager
