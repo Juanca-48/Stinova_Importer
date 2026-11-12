@@ -194,7 +194,47 @@ en viewport y render.
   accesorio". La pieza queda rígida y se mueve solo con su hueso.
 
 
-10. LIMITACIONES CONOCIDAS
+10. ARMAS
+---------
+
+Las armas se importan aparte, con el botón "Importar arma" de la sección
+"Armas" del panel. Importar un personaje nunca trae su arma.
+
+- Cada skin de un arma son varias piezas: el cuerpo, su mira y a veces un
+  colgante, cada una también en versión lobby.
+- Elige el cuerpo del arma (o la carpeta de la skin, sin elegir archivo) y
+  se importa armada: la mira y el colgante se cuelgan de sus huesos (Sight,
+  Pendant) y siguen al arma. Si la skin no trae mira propia, usa la del arma
+  base.
+- En las opciones del navegador de archivos, "Incluir mira" decide si se trae
+  la mira o solo el cuerpo.
+- Si eliges cualquier otra pieza (una mira, un colgante, una versión lobby
+  suelta), se importa solo esa pieza.
+- Acepta .uemodel y .fbx. Cada arma queda en su colección "Arma <nombre>" y
+  no toca a los personajes de la escena.
+- Con "Aplicar Toon Shading" marcado, el arma recibe el toon del add-on: la
+  misma luz y sombra que los personajes, un brillo de matcap donde el arma
+  es metal pulido y su contorno. Las lentes de las miras quedan como cristal
+  translúcido.
+- Iluminación: si al importar tienes seleccionado un personaje (o un arma
+  que ya usa su luz), el arma usa el sol y los colores del panel de ese
+  personaje, así combina cuando la pongas en su mano. Si no, crea su
+  propio sol.
+- Las texturas se buscan en la carpeta SkinAssets de FModel: junto al
+  modelo si viene de FModel, o a partir de la "Carpeta del personaje" del
+  panel si es un .fbx.
+- Controles del arma (colección de huesos "Arma"):
+    * Marco amarillo (Root): mueve y gira el arma entera.
+    * Círculos celestes: las piezas que se mueven, como cargador
+      (Magazine), cerrojo (Pull), silenciador (Suppressor), empuñadura
+      (Foregrip) o la hoja de la katana.
+    * Círculos rosados: la mira y el colgante.
+  Los puntos de referencia del juego (boca del cañón, eyección de casquillos,
+  cámara de apuntado...) quedan en la colección "Sockets", oculta.
+- Por ahora no se une a la mano del personaje.
+
+
+11. LIMITACIONES CONOCIDAS
 --------------------------
 
 - La sombra es un tinte fijo, no las rampas de color del juego.
@@ -203,7 +243,7 @@ en viewport y render.
 - La física no reacciona al mover el hueso root ni al levantar las piernas.
 
 
-11. PARA DESARROLLADORES
+12. PARA DESARROLLADORES
 ------------------------
 
 Módulos (carpeta strinova_toon):
@@ -215,6 +255,7 @@ Módulos (carpeta strinova_toon):
   face.py       Secciones de la cara, mirada, parpadeo y huesos faciales.
   paper.py      Versión de papel y el cambio 3D / papel.
   accessory.py  Huesos e interruptores de accesorios.
+  weapon.py     Importar armas y objetos.
   common.py     Utilidades compartidas.
   materials.json  Datos de todos los materiales de los personajes.
   __init__.py   Panel y registro.

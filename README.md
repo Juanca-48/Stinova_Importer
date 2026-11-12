@@ -14,6 +14,7 @@ Funciona con los dos formatos de modelo: **`.uemodel`** y **`.fbx`**, vengan de 
 - **Versión de papel**: cambia entre el modelo 3D y el de papel en un fotograma, como en el juego.
 - **Accesorios**: máscaras y sombreros con su propio hueso y un interruptor para mostrarlos u ocultarlos.
 - **Varios personajes** en la misma escena, cada uno con su propia luz.
+- **Armas** y objetos de los personajes, con su propio botón de importación.
 
 ## Necesitas
 

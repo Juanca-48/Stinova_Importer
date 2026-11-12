@@ -11,9 +11,9 @@ bl_info = {
 # Strinova (PaperMan) character setup, one module per concern: see the module list in INSTRUCCIONES.txt.
 if "bpy" in locals():  # add-on reload: refresh the submodules too (import_module also loads new ones)
     import importlib
-    for _n in ("common", "shading", "face", "accessory", "rig", "paper", "importer"):
+    for _n in ("common", "shading", "face", "accessory", "rig", "paper", "importer", "weapon"):
         importlib.reload(importlib.import_module(f".{_n}", __package__))
-from . import common, shading, face, accessory, rig, paper, importer
+from . import common, shading, face, accessory, rig, paper, importer, weapon
 import bpy
 
 
@@ -33,6 +33,11 @@ class STRINOVA_PT_panel(bpy.types.Panel):
         col.separator()
         col.label(text="Carpeta del personaje:")
         col.prop(context.scene, "strinova_char_dir", text="")
+        # weapons are imported apart: many are shared by several skins, and a skin never brings its weapon
+        header, body = col.panel("strinova_weapons", default_closed=False)
+        header.label(text="Armas", icon="MOD_ARMATURE")
+        if body:
+            body.operator(weapon.STRINOVA_OT_import_weapon.bl_idname, icon="IMPORT")
         # shading and rig run inside the import; their operators stay registered for it (and F3)
         mesh = common.target_mesh(context)
         omod = mesh.modifiers.get("ST Outline") if mesh else None
@@ -65,7 +70,7 @@ class STRINOVA_PT_panel(bpy.types.Panel):
             col.label(text="Selecciona la malla o su armature", icon="INFO")
 
 
-classes = importer.classes + shading.classes + rig.classes + accessory.classes + (STRINOVA_PT_panel,)
+classes = importer.classes + weapon.classes + shading.classes + rig.classes + accessory.classes + (STRINOVA_PT_panel,)
 
 
 def register():
