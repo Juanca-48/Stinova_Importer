@@ -8,7 +8,7 @@ bl_info = {
     "category": "Import-Export",
 }
 
-# Strinova (PaperMan) character setup, one module per concern: see the README's module table.
+# Strinova (PaperMan) character setup, one module per concern: see the module list in INSTRUCCIONES.txt.
 if "bpy" in locals():  # add-on reload: refresh the submodules too (import_module also loads new ones)
     import importlib
     for _n in ("common", "shading", "face", "accessory", "rig", "paper", "importer"):
