@@ -6,7 +6,7 @@ The shader reuses Gacha Setup's idea of light/head vectors stored as mesh attrib
 shortcut: shadow colour is a flat tint, not the game's RampID atlas; swap in ramps once exported.
 shortcut: Mask1/Mask2 are not used yet; their channel meaning is still unverified.
 """
-import bpy, os, re, json, contextlib, mathutils
+import bpy, os, re, json, contextlib, functools, mathutils
 from math import cos, sin, tau  # imported by name: math() below is a node helper
 from .common import target_mesh
 
@@ -847,6 +847,28 @@ def mod_input(mod, name):
     return getattr(mod.properties.inputs, mod.node_group.interface.items_tree[name].identifier)
 
 
+@functools.lru_cache(maxsize=1)
+def _material_db():
+    """materials.json, bundled with the add-on (tools/build_materials_db.py makes it from FModel's
+    export): {material name lower-cased: {"<Character>/<Skin>" or "*": material data}}."""
+    path = os.path.join(os.path.dirname(__file__), "materials.json")
+    if not os.path.isfile(path):
+        return {}
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def bundled_material(name, skin, char_dir):
+    """Material data from the bundled table: the entry of this character and skin if the material
+    differs between skins, else the shared one. None if the material is not in the table."""
+    entries = _material_db().get(name.lower())
+    if not entries:
+        return None
+    char = os.path.basename(os.path.normpath(char_dir)) if char_dir else ""
+    return (entries.get("*") or entries.get(f"{char}/{skin}")
+            or next((v for k, v in entries.items() if k.endswith(f"/{skin}")), None) or next(iter(entries.values())))
+
+
 def run(obj, char_dir):
     arm = obj.find_armature()
     mesh_skin = skin_of(obj.name, "")
@@ -865,12 +887,17 @@ def run(obj, char_dir):
         if mat.name.endswith(OUTLINE_SUFFIX):
             continue
         base_name = re.sub(r"\.\d{3}$", "", mat.name)  # Blender adds .001 on name clashes (re-imports, FBX)
-        jp = pick(json_idx, base_name, skin_of(base_name, mesh_skin))
-        if not jp:
-            report[mat.name] = "sin JSON, se deja igual"
+        skin = skin_of(base_name, mesh_skin)
+        jp = pick(json_idx, base_name, skin)  # a JSON next to the textures wins (newer or edited export)
+        if jp:
+            with open(jp, encoding="utf-8") as fh:
+                data = json.load(fh)
+        else:
+            data = bundled_material(base_name, skin, char_dir)
+        if not data:
+            report[mat.name] = "sin datos de material, se deja igual"
             continue
-        with open(jp, encoding="utf-8") as fh:
-            setup_material(mat, json.load(fh), tex_idx, mesh_skin, face_g, toon_g, report)
+        setup_material(mat, data, tex_idx, mesh_skin, face_g, toon_g, report)
     ensure_outline(obj)
     return report
 
