@@ -38,6 +38,15 @@ class STRINOVA_PT_panel(bpy.types.Panel):
         header.label(text="Armas", icon="MOD_ARMATURE")
         if body:
             body.operator(weapon.STRINOVA_OT_import_weapon.bl_idname, icon="IMPORT")
+            w = weapon.weapon_rig(context.active_object)
+            if w:
+                body.label(text=w.name, icon="ARMATURE_DATA")
+                body.operator(weapon.STRINOVA_OT_weapon_hand.bl_idname, icon="VIEW_PAN")
+                hands = body.column(align=True)
+                for prop, text, icon in ((weapon.GRIP_PROP, "Mano derecha (gatillo)", "HAND"),
+                                         (weapon.SUPPORT_PROP, "Mano izquierda (soporte)", "HAND")):
+                    if prop in w:  # animatable: keyframe to let go or take the weapon
+                        hands.prop(w, f'["{prop}"]', text=text, toggle=True, icon=icon)
         # shading and rig run inside the import; their operators stay registered for it (and F3)
         mesh = common.target_mesh(context)
         omod = mesh.modifiers.get("ST Outline") if mesh else None
