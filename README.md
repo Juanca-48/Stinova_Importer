@@ -26,10 +26,9 @@ Funciona con los dos formatos de modelo: **`.uemodel`** y **`.fbx`**, vengan de 
 
 ## Descarga e instalación
 
-1. Descarga el repositorio: botón verde **Code > Download ZIP**, y descomprímelo.
-2. Dentro está la carpeta `strinova_toon`. Comprímela sola en un zip (en Windows: clic derecho > *Enviar a > Carpeta comprimida*).
-3. En Blender: *Edit > Preferences > Add-ons > Install from Disk* y elige ese zip.
-4. Activa **Strinova Toon Setup** (y Gacha Setup, si no lo estaba).
+1. Descarga `strinova_toon-vX.Y.Z.zip` de la última versión en **[Releases](https://github.com/Juanca-48/Stinova_Importer/releases/latest)**. No lo descomprimas.
+2. En Blender: *Edit > Preferences > Add-ons > Install from Disk* y elige ese zip.
+3. Activa **Strinova Toon Setup** (y Gacha Setup, si no lo estaba).
 
 El panel aparece en el viewport 3D, pestaña **Strinova** (tecla N).
 
