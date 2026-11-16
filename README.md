@@ -14,7 +14,7 @@ Funciona con los dos formatos de modelo: **`.uemodel`** y **`.fbx`**, vengan de 
 - **Versión de papel**: cambia entre el modelo 3D y el de papel en un fotograma, como en el juego.
 - **Accesorios**: máscaras y sombreros con su propio hueso y un interruptor para mostrarlos u ocultarlos.
 - **Varios personajes** en la misma escena, cada uno con su propia luz.
-- **Armas** y objetos de los personajes, con su propio botón de importación.
+- **Armas** con su propio botón: cuerpo, mira, colgante y cargador montados, con su shading, y un botón para ponerlas en la mano del personaje.
 
 ## Necesitas
 
@@ -26,9 +26,12 @@ Funciona con los dos formatos de modelo: **`.uemodel`** y **`.fbx`**, vengan de 
 
 ## Descarga e instalación
 
-1. Descarga `strinova_toon-vX.Y.Z.zip` de la última versión en **[Releases](https://github.com/Juanca-48/Stinova_Importer/releases/latest)**. No lo descomprimas.
-2. En Blender: *Edit > Preferences > Add-ons > Install from Disk* y elige ese zip.
-3. Activa **Strinova Toon Setup** (y Gacha Setup, si no lo estaba).
+1. Instala **[Gacha Setup](https://github.com/PaoloESAN/gacha-setup/releases)** y, si vas a usar `.uemodel`, **[UEFormat](https://github.com/h4lfheart/UEFormat)**, siguiendo las instrucciones de cada uno.
+2. Descarga `strinova_toon-vX.Y.Z.zip` de la última versión en **[Releases](https://github.com/Juanca-48/Stinova_Importer/releases/latest)**. No lo descomprimas.
+3. En Blender: *Edit > Preferences > Add-ons > Install from Disk* y elige ese zip.
+4. Activa **Strinova Toon Setup** y comprueba que **Gacha Setup** y **Rigify** (incluido en Blender) también estén activos.
+
+Para actualizar, instala el zip de la versión nueva de la misma forma y reinicia Blender.
 
 El panel aparece en el viewport 3D, pestaña **Strinova** (tecla N).
 
