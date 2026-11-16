@@ -654,6 +654,11 @@ class STRINOVA_OT_import_weapon(bpy.types.Operator, ImportHelper):
         if not files:
             self.report({"ERROR"}, "Elige el arma (.uemodel o .fbx) o la carpeta de una de sus skins")
             return {"CANCELLED"}
+        # a character (its 3D and paper models live in Mesh3D* / Mesh2D) picked here by mistake: as a
+        # weapon it got weapon shading and showed only its outline
+        if any(re.match(r"mesh[23]d", part, re.I) for f in files for part in os.path.normpath(f).split(os.sep)):
+            self.report({"ERROR"}, "Eso es un personaje, no un arma: usa Importar personaje")
+            return {"CANCELLED"}
         if any(f.lower().endswith(".uemodel") for f in files) and not hasattr(bpy.types, "UF_OT_import_uemodel"):
             self.report({"ERROR"}, "UEFormat no esta activo: activalo o importa el arma como .fbx")
             return {"CANCELLED"}

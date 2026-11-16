@@ -259,6 +259,7 @@ FINGER_MASTER = re.compile(r"(f_\w+|thumb)\.01_master\.[LR]")
 
 
 POLE_PARENT, POLE_DIST = "Chest", 0.4
+SHOULDER_TOGGLE = "Toggle Shoulder Constraints"
 
 
 def _enum_index(pb, prop, name):
@@ -308,7 +309,7 @@ def fix_arm_pole(context, rig, side):
 
 
 def fix_controls(context, rig):
-    """Two Gacha defaults that fight the animator:
+    """Gacha defaults that fight the animator (and the automatic shoulder, below):
     - the head's look-at target (head-controller) hangs from root.002, so turning the torso left
       the head staring at a fixed point and twisting: it now follows the chest (its own parent
       switch, keeping where it is);
@@ -318,6 +319,13 @@ def fix_controls(context, rig):
     for pb in rig.pose.bones:
         if FINGER_MASTER.fullmatch(pb.name):
             pb.lock_location = (True, True, True)
+    # Gacha's automatic shoulder aims at a shoulder_driver bone it places metres away (another game's
+    # scale), almost opposite to the shoulder: any move of the hand spun the shoulder (over 100
+    # degrees) and wrung the top of the arm. Off by default; the toggle stays on plate-settings.
+    settings = rig.pose.bones.get("plate-settings")
+    if settings and SHOULDER_TOGGLE in settings:
+        settings[SHOULDER_TOGGLE] = 0
+        rig.update_tag()
     if rig.name in context.view_layer.objects and rig.mode != "EDIT":
         for side in ("L", "R"):
             fix_arm_pole(context, rig, side)
