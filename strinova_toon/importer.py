@@ -120,6 +120,9 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
     do_shading: bpy.props.BoolProperty(name="Aplicar Toon Shading", default=True)
     do_rig: bpy.props.BoolProperty(name="Generar rig", default=True)
     do_paper: bpy.props.BoolProperty(name="Incluir version de papel", default=False)
+    # the paper version's second import: the exact collection of the 3D import it joins (by name a
+    # repeated skin would find the first copy, "Name" vs "Name.001")
+    collection: bpy.props.StringProperty(options={"HIDDEN", "SKIP_SAVE"})
 
     def invoke(self, context, event):
         # the panel's checkboxes; the file browser's own options sidebar is easy to miss
@@ -160,7 +163,7 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
         prev_active = vl.active_layer_collection
         name = collection_name(self.filepath, char_dir)
         # paper version (Mesh2D) of a character already in the scene: joins its collection and rig
-        existing = bpy.data.collections.get(name)
+        existing = bpy.data.collections.get(self.collection or name)
         if existing and not _layer_collection(vl.layer_collection, existing):
             existing = None  # same name but not in this scene
         host = paper.find_host(existing) if paper.is_paper_path(self.filepath) else None
@@ -169,6 +172,7 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
         else:
             coll = bpy.data.collections.new(name)
             context.scene.collection.children.link(coll)
+        own = coll.name  # "Name.001" when the skin is already in the scene
         vl.active_layer_collection = _layer_collection(vl.layer_collection, coll)
         before = set(bpy.data.objects)
         before_colls = set(bpy.data.collections)
@@ -179,12 +183,13 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
             vl.active_layer_collection = prev_active
             if not coll.objects and not coll.children:  # nothing imported
                 bpy.data.collections.remove(coll)
-            elif name not in bpy.data.collections:
-                coll.name = name  # Gacha's rigger renames the active collection to the bare character name
+            elif coll.name != own and own not in bpy.data.collections:
+                coll.name = own  # Gacha's rigger renames the active collection to the bare character name
         if result == {"FINISHED"} and self.do_paper and not paper.is_paper_path(self.filepath):
             pp = paper_path(self.filepath, context.scene.strinova_char_dir)
             if pp:  # a second import: it finds this character in its collection and joins its rig
-                bpy.ops.strinova.import_character(filepath=pp, do_shading=self.do_shading, do_rig=False, do_paper=False)
+                bpy.ops.strinova.import_character(filepath=pp, do_shading=self.do_shading, do_rig=False, do_paper=False,
+                                                  collection=coll.name)
             else:
                 self.report({"WARNING"}, f"{name}: esta skin no trae version de papel (Mesh2D)")
         return result

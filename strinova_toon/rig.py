@@ -1,6 +1,7 @@
 """Rig: Rigify rig through Gacha Setup's NTE rigger, Strinova-specific fixes on top of it, and the
 constraint 'physics' for hair, clothes and chest."""
 import bpy, re, math, contextlib
+from mathutils import Vector
 from .common import target_mesh
 from . import shading, face, accessory
 
@@ -253,6 +254,94 @@ def others_aside(context, obj):
                 o.hide_set(True, view_layer=vl)
 
 
+HEAD_TARGET, HEAD_TARGET_PARENT = "head-controller", "chest"
+FINGER_MASTER = re.compile(r"(f_\w+|thumb)\.01_master\.[LR]")
+
+
+POLE_PARENT, POLE_DIST = "Chest", 0.4
+
+
+def _enum_index(pb, prop, name):
+    items = pb.id_properties_ui(prop).as_dict().get("items", [])
+    return next((it[4] for it in items if it[1] == name), None)
+
+
+def fix_arm_pole(context, rig, side):
+    """Arms with their elbow pole on. Gacha leaves the pole IK muted, and the pole-less IK twists the
+    arm from the bones' rest (a T-pose) while the character stands in an A-pose: moving the hand,
+    the elbow flew up and out and the arm turned on itself. Here the pole IK takes over (as Rigify's
+    own pole toggle does), its target hangs from the chest right behind the elbow, and its angle is
+    the one that leaves the starting pose as it was."""
+    pb = rig.pose.bones
+    joint, par, target = pb.get(f"MCH-forearm_ik.{side}"), pb.get(f"upper_arm_parent.{side}"), pb.get(f"upper_arm_ik_target.{side}")
+    cons = [c for c in joint.constraints if c.type == "IK"] if joint else []
+    pole = next((c for c in cons if c.pole_target), None)
+    if not (pole and par and target and "pole_vector" in par):
+        return
+    context.view_layer.update()
+    names = (f"DEF-upper_arm.{side}", f"DEF-forearm.{side}", f"DEF-hand.{side}")
+    keep = {n: pb[n].matrix.copy() for n in names}
+    shoulder, elbow, wrist = pb[names[0]].head.copy(), pb[names[1]].head.copy(), pb[names[2]].head.copy()
+    for c in cons:
+        c.mute = c is not pole
+    par["pole_vector"] = True
+    chest = _enum_index(par, "pole_parent", POLE_PARENT)
+    if chest is not None:
+        par["pole_parent"] = chest
+    rig.update_tag()
+    context.view_layer.update()
+    axis = (wrist - shoulder).normalized()
+    back = Vector((0, 1, 0))  # the character faces -Y
+    back = (back - back.dot(axis) * axis).normalized()
+    m = target.matrix.copy()
+    m.translation = elbow + back * POLE_DIST
+    target.matrix = m
+
+    def drift(angle):
+        pole.pole_angle = angle
+        context.view_layer.update()
+        return max(pb[n].matrix.to_quaternion().rotation_difference(keep[n].to_quaternion()).angle for n in names)
+
+    best = min((math.radians(a) for a in range(-180, 180, 5)), key=drift)
+    best = min((best + math.radians(a) / 4 for a in range(-20, 21)), key=drift)
+    drift(best)
+
+
+def fix_controls(context, rig):
+    """Two Gacha defaults that fight the animator:
+    - the head's look-at target (head-controller) hangs from root.002, so turning the torso left
+      the head staring at a fixed point and twisting: it now follows the chest (its own parent
+      switch, keeping where it is);
+    - a finger master's location is copied to its finger's base, so scaling several to curl
+      them (median pivot) also pulled them together and the hand looked smaller: their location
+      is locked (they only rotate and scale)."""
+    for pb in rig.pose.bones:
+        if FINGER_MASTER.fullmatch(pb.name):
+            pb.lock_location = (True, True, True)
+    if rig.name in context.view_layer.objects and rig.mode != "EDIT":
+        for side in ("L", "R"):
+            fix_arm_pole(context, rig, side)
+    pb = rig.pose.bones.get(HEAD_TARGET)
+    if not pb or "parent_switch" not in pb:
+        return
+    items = pb.id_properties_ui("parent_switch").as_dict().get("items", [])
+    idx = next((it[4] for it in items if it[1] == HEAD_TARGET_PARENT), None)
+    if idx is None or pb["parent_switch"] == idx:
+        return
+    # only an evaluated pose can be read and written back: a rig in an excluded collection or in
+    # edit mode has none (writing pb.matrix there crashed Blender), so it just switches parent
+    live = rig.name in context.view_layer.objects and rig.mode != "EDIT"
+    if live:
+        context.view_layer.update()
+        keep = pb.matrix.copy()
+    pb["parent_switch"] = idx  # (not its UI default: updating it drops the switch's enum items)
+    rig.update_tag()
+    if live:
+        context.view_layer.update()
+        pb.matrix = keep
+        context.view_layer.update()
+
+
 class STRINOVA_OT_rig(bpy.types.Operator):
     bl_idname = "strinova.rig_physics"
     bl_label = "Generar rig"
@@ -309,6 +398,7 @@ class STRINOVA_OT_rig(bpy.types.Operator):
             settings = rig.pose.bones.get("plate-settings")
             if settings and "Use Head Controller" in settings:
                 settings["Use Head Controller"] = 1
+            fix_controls(context, rig)
         n = apply_inertia(rig)
         self.report({"INFO"}, f"Rig listo: {rig.name}, {n} cadenas con fisica")
         return {"FINISHED"}
