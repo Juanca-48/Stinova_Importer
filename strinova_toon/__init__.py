@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 bl_info = {
     "name": "Strinova Toon Setup",
     "author": "juanc",
@@ -6,6 +7,7 @@ bl_info = {
     "location": "3D View > Sidebar (N) > Strinova",
     "description": "Importa personajes de Strinova (FModel) con toon shading, rig y fisica por constraints",
     "category": "Import-Export",
+    "license": "GPL-3.0-or-later",
 }
 
 # Strinova (PaperMan) character setup, one module per concern: see the module list in INSTRUCCIONES.txt.

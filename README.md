@@ -34,3 +34,7 @@ Funciona con los dos formatos de modelo: **`.uemodel`** y **`.fbx`**, vengan de 
 El panel aparece en el viewport 3D, pestaña **Strinova** (tecla N).
 
 La guía de uso completa, con todas las opciones, está en [INSTRUCCIONES.txt](INSTRUCCIONES.txt).
+
+## Licencia
+
+[GPL-3.0-or-later](LICENSE), la misma que Blender y que [Gacha Setup](https://github.com/PaoloESAN/gacha-setup), cuyo rigger usa este add-on para generar el rig.
