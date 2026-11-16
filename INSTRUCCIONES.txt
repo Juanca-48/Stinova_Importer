@@ -231,16 +231,17 @@ Las armas se importan aparte, con el botón "Importar arma" de la sección
     * Círculos rosados: la mira y el colgante.
   Los puntos de referencia del juego (boca del cañón, eyección de casquillos,
   cámara de apuntado...) quedan en la colección "Sockets", oculta.
-- Conectar a la mano: selecciona el arma y el personaje (su rig o su malla)
-  y pulsa "Conectar a la mano" en la sección Armas. El arma toma también la
-  luz de ese personaje. Quedan dos interruptores, animables por separado:
-    * Mano derecha (gatillo): el arma sigue la mano derecha, con la
-      empuñadura en la palma, el cañón en la dirección de los dedos y la
-      parte de arriba hacia el pulgar. Con el brazo hacia delante, apunta
-      al frente. Apagado, el arma vuelve a donde estaba.
-    * Mano izquierda (soporte): la mano izquierda va por IK al control
-      verde "Soporte" del arma (en la empuñadura delantera si la tiene, si
-      no bajo el cañón). Mueve ese control para ajustar dónde la apoya.
+- Conectar arma: selecciona el arma y pulsa "Conectar arma" en la sección
+  Armas. El cursor pasa a cuentagotas: haz clic sobre el personaje en el
+  viewport (Esc o clic derecho cancela; mientras tanto puedes mover la
+  vista). El arma va a su mano derecha y toma también la luz de ese
+  personaje. Ya conectada, el panel muestra a quién está conectada, los
+  controles de las dos manos y "Desconectar arma", que la suelta y la
+  devuelve a donde estaba antes de conectarla.
+  El interruptor "Mano derecha (gatillo)" la suelta o la vuelve a tomar
+  (se puede animar). Conectada, el arma sigue la mano derecha, con la
+  empuñadura en la palma, el cañón en la dirección de los dedos y la parte
+  de arriba hacia el pulgar. Apagado, el arma vuelve a donde estaba.
   Si el brazo derecho estaba en reposo, al conectar se coloca en la pose de
   reposo del juego ("low ready"): la empuñadura en el lado derecho de la
   cintura, la culata junto a las costillas y el cañón hacia delante y abajo,
@@ -248,8 +249,19 @@ Las armas se importan aparte, con el botón "Importar arma" de la sección
   Para ajustar el agarre usa el control Root del arma (marco amarillo), no
   muevas el objeto del arma: mientras está conectada, mover el objeto se
   suma al agarre y la saca de la mano.
-  Si el brazo izquierdo no llega al soporte (rifles largos), acerca el arma
-  al cuerpo al posar.
+- Mano izquierda: cada arma trae el control verde "Agarre", un anillo bajo
+  el cañón que se desliza a lo largo del arma (solo en esa dirección, por la
+  guía verde que marca su recorrido) y se pega a la parte de abajo del arma.
+  Con el arma ya conectada y seleccionada, "Conectar mano izquierda" pasa el brazo
+  izquierdo a IK, pone la mano en el agarre (palma en él, dedos a lo largo
+  del cañón, pulgar arriba) y la engancha:
+    * Deslizar el agarre (G) lleva la mano a lo largo del arma.
+    * El control de la mano izquierda sigue sirviendo para ajustar cómo la
+      apoya (moverla o girarla un poco), sin soltarla del arma.
+    * El interruptor "Mano izquierda (agarre)" la suelta o la toma (se puede
+      animar).
+  Si el agarre queda más lejos de lo que alcanza el brazo, la mano se queda
+  corta: acerca el agarre a la empuñadura o el arma al cuerpo.
 
 
 11. LIMITACIONES CONOCIDAS

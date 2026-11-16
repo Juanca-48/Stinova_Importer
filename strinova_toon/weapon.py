@@ -13,9 +13,10 @@ importing any other piece brings just that piece.
 import bpy, os, re, math
 from mathutils import Matrix, Vector, Quaternion
 from bpy_extras.io_utils import ImportHelper
+from bpy_extras import view3d_utils
 from . import importer, shading, common
 
-PIECE_BONE = {"sight": "Sight", "pendant": "Pendant"}  # piece kind -> socket bone on the body
+PIECE_BONE = {"sight": "Sight", "pendant": "Pendant", "magazine": "Magazine"}  # piece kind -> socket bone on the body
 
 
 def weapon_name(path):
@@ -24,9 +25,11 @@ def weapon_name(path):
 
 
 def piece_of(path):
-    """(kind, view, lobby): kind body / sight / pendant; view '' / '1p' / 'jp'; lobby version or not."""
+    """(kind, view, lobby): kind body / sight / pendant / magazine; view '' / '1p' / 'jp'; lobby version or not."""
     s = os.path.splitext(os.path.basename(path))[0].lower()
-    kind = "sight" if "sigh" in s else "pendant" if "pendant" in s else "body"  # 'Sigh_Mesh': a typo in the game
+    # the game's own typos: Sigh_Mesh, Pandant, Pendent, Magzine
+    kind = ("sight" if "sigh" in s else "pendant" if re.search(r"p[ae]nd[ae]nt", s)
+            else "magazine" if re.search(r"maga?zine", s) else "body")
     view = next((v for v in ("1p", "jp") if re.search(rf"(^|_){v}(_|$)", s)), "")
     lobby = "lobby" in s or "lobby" in os.path.basename(os.path.dirname(path)).lower()
     return kind, view, lobby
@@ -73,6 +76,8 @@ def assembly(path, sight):
                      if os.path.isdir(os.path.join(os.path.dirname(folder), b))), None)
         pieces += (sight_in(same) or (sight_in(models_near(base)) if base and base != folder else []))[:1]
     pieces += [f for f in same if piece_of(f)[0] == "pendant"]
+    # a separate magazine (P90, some AKM skins) only from its own folder: other bodies carry theirs
+    pieces += [f for f in same if piece_of(f)[0] == "magazine" and not piece_of(f)[1]][:1]
     return [body] + pieces
 
 
@@ -112,7 +117,16 @@ def hang(context, objs, body_arm, bone_name):
     return True
 
 
-PIECE_LABEL = {"sight": "Mira", "pendant": "Colgante"}  # bone names of a piece once joined to the weapon's rig
+def carries(objs, bone):
+    """A body mesh already skinned to this socket bone (it has the piece built in)."""
+    for m in objs:
+        g = m.vertex_groups.get(bone) if m.type == "MESH" else None
+        if g and any(e.group == g.index and e.weight > 0.5 for v in m.data.vertices for e in v.groups):
+            return True
+    return False
+
+
+PIECE_LABEL = {"sight": "Mira", "pendant": "Colgante", "magazine": "Cargador"}  # bone names of a piece once joined to the weapon's rig
 
 
 def join_piece(context, body_arm, objs, socket, label):
@@ -159,7 +173,6 @@ SOCKETS = "Sockets"  # game attachment points (muzzle, shell drop, camera...): h
 ROOT_COLOR = (1.0, 0.75, 0.1)
 PART_COLOR = (0.2, 0.75, 1.0)
 PIECE_COLOR = (1.0, 0.35, 0.6)  # sight and pendant holders
-SUPPORT_COLOR = (0.35, 1.0, 0.4)  # where the left hand goes
 PAD = 0.01
 
 
@@ -239,10 +252,11 @@ def rig_weapon(context, arm, meshes, pieces):
 
 
 # ---------- hands ----------
-GRIP_PROP, SUPPORT_PROP = "st_grip", "st_support"  # weapon rig toggles: right hand (trigger), left hand (support)
-GRIP_CON, SUPPORT_CON = "ST Mano derecha", "ST Mano izquierda"
-SUPPORT = "Soporte"  # weapon bone the left hand goes to
-RIGHT_HAND, LEFT_HAND, LEFT_IK, LEFT_ARM = "DEF-hand.R", "DEF-hand.L", "hand_ik.L", "upper_arm_parent.L"
+GRIP_PROP = "st_grip"  # weapon rig toggle: in the right hand (trigger) or not
+GRIP_CON = "ST Mano derecha"
+# left hand support, removed: only cleaned up from rigs connected by an older version
+OLD_SUPPORT_PROP, OLD_SUPPORT_CON, OLD_SUPPORT, LEFT_IK = "st_support", "ST Mano izquierda", "Soporte", "hand_ik.L"
+RIGHT_HAND = "DEF-hand.R"
 RIGHT_IK, RIGHT_ARM, CHEST = "hand_ik.R", "upper_arm_parent.R", "DEF-spine.003"
 # starting pose: the game's idle "low ready" (Referencias, shooting gallery): grip at the right side of
 # the waist, stock along the right ribs, barrel forward and down across the body toward the left
@@ -273,25 +287,9 @@ def grip_frame(rig, hand_bone=None):
     return Matrix.Translation(hand.head_local + d * GRIP_IN + Vector((0, 0, -GRIP_DOWN))) @ rot
 
 
-def support_point(arm):
-    """The left hand's place on the weapon (weapon armature space): its foregrip if it has one, else
-    under the barrel 30% of the way from the grip to the muzzle."""
-    if "Foregrip" in arm.data.bones:
-        return arm.data.bones["Foregrip"].head_local.copy()
-    root = arm.data.bones["Root"].head_local
-    pts = [arm.matrix_world.inverted() @ (m.matrix_world @ v.co) for m in arm.children if m.type == "MESH"
-           and m.find_armature() == arm and not m.name.startswith("WGT") for v in m.data.vertices]
-    if not pts:
-        return root + Vector((0, -0.25, -0.03))
-    y = root.y + (min(p.y for p in pts) - root.y) * 0.3
-    near = [p.z for p in pts if abs(p.y - y) < 0.02] or [root.z]
-    return Vector((root.x, y, min(near)))
-
-
 def hold_pose(context, arm, rig):
     """A starting pose when the right arm is untouched: its IK hand moved so the weapon is held like the
-    game's idle (low ready), the left hand then reaching its support. An arm already posed is left
-    alone."""
+    game's idle (low ready). An arm already posed is left alone."""
     ik = rig.pose.bones.get(RIGHT_IK)
     if not ik or CHEST not in rig.data.bones or ik.location.length > 1e-4 or ik.rotation_quaternion != Quaternion()             or any(abs(a) > 1e-4 for a in ik.rotation_euler):
         return False
@@ -321,25 +319,49 @@ def drive_influence(con, owner, prop):
 
 
 def disconnect(arm):
-    """Remove the weapon's hand constraints, on itself and on the rig it was connected to."""
+    """Remove the weapon's hand constraints, on itself and on the rig it was connected to: the weapon
+    goes back to where it was before connecting, the left hand control stays where it is."""
     c = arm.constraints.get(GRIP_CON)
     if c:
         arm.constraints.remove(c)
     rig = arm.get("st_hand_rig")
     pb = rig.pose.bones.get(LEFT_IK) if isinstance(rig, bpy.types.Object) else None
-    if pb and pb.constraints.get(SUPPORT_CON):
-        pb.constraints.remove(pb.constraints[SUPPORT_CON])
+    for name in (OLD_SUPPORT_CON, LEFT_CON):
+        con = pb.constraints.get(name) if pb else None
+        if con:
+            keep = rig.matrix_world @ pb.matrix
+            pb.constraints.remove(con)
+            pb.matrix = rig.matrix_world.inverted() @ keep
+    for prop in (LEFT_PROP, "st_hand_rig"):
+        if prop in arm:
+            del arm[prop]
+
+
+def connected(arm):
+    """The character rig the weapon is in the hand of, or None."""
+    rig = arm.get("st_hand_rig")
+    return rig if isinstance(rig, bpy.types.Object) and arm.constraints.get(GRIP_CON) else None
+
+
+def character_rig(ob):
+    """The character rig of a clicked or selected object (its mesh, its rig or something parented to
+    it), if it has the hands a weapon goes to."""
+    while ob:
+        rig = ob if ob.type == "ARMATURE" else ob.find_armature() if ob.type == "MESH" else None
+        if rig and not weapon_rig(rig) and RIGHT_HAND in rig.data.bones:
+            return rig
+        ob = ob.parent
+    return None
 
 
 def connect(context, arm, rig):
-    """Weapon in the right hand of `rig` (it follows the hand) and the left hand on its Soporte bone
-    (by IK). Each one has its own animatable toggle on the weapon rig."""
+    """Weapon in the right hand of `rig`: it follows the hand, with an animatable toggle on the weapon rig."""
     disconnect(arm)
-    for prop, desc in ((GRIP_PROP, "El arma sigue la mano derecha del personaje (gatillo)"),
-                       (SUPPORT_PROP, "La mano izquierda del personaje va al soporte del arma")):
-        if prop not in arm:
-            arm[prop] = True
-            arm.id_properties_ui(prop).update(description=desc)
+    if GRIP_PROP not in arm:
+        arm[GRIP_PROP] = True
+        arm.id_properties_ui(GRIP_PROP).update(description="El arma sigue la mano derecha del personaje (gatillo)")
+    if OLD_SUPPORT_PROP in arm:
+        del arm[OLD_SUPPORT_PROP]
     arm.update_tag()
     root = arm.data.bones["Root"]
     hand = rig.data.bones[RIGHT_HAND]
@@ -352,35 +374,14 @@ def connect(context, arm, rig):
     drive_influence(c, arm, GRIP_PROP)
     context.view_layer.update()
     hold_pose(context, arm, rig)
-    # left hand: a Soporte bone on the weapon where the left wrist goes for its palm to be on the support
-    # point, turned by the same rule as the right hand (fingers along the barrel, thumb up)
-    hand_l = rig.data.bones[LEFT_HAND]
-    want = arm.matrix_world @ Matrix.Translation(support_point(arm)) @ grip_frame(rig, LEFT_HAND).inverted() @ hand_l.matrix_local
-    for o in context.view_layer.objects:
-        o.select_set(False)
-    context.view_layer.objects.active = arm
-    arm.select_set(True)
-    bpy.ops.object.mode_set(mode="EDIT")
-    eb = arm.data.edit_bones
-    s = eb.get(SUPPORT) or eb.new(SUPPORT)
-    s.parent, s.use_deform = eb["Root"], False
-    s.head, s.tail = Vector((0, 0, 0)), Vector((0, 0.05, 0))
-    s.matrix = arm.matrix_world.inverted() @ want
-    bpy.ops.object.mode_set(mode="OBJECT")
-    pb = arm.pose.bones[SUPPORT]
-    pb.location, pb.rotation_quaternion, pb.rotation_euler = (0, 0, 0), (1, 0, 0, 0), (0, 0, 0)
-    coll = arm.data.collections.get(CONTROLS) or arm.data.collections.new(CONTROLS)
-    for col in list(pb.bone.collections):
-        col.unassign(pb.bone)
-    coll.assign(pb.bone)
-    _side_widget(pb, [pb.bone.head_local], "part")
-    pb.custom_shape_translation = (0, GRIP_IN, 0)  # the bone is the wrist: draw it at the palm, on the weapon
-    common.paint(arm, SUPPORT, SUPPORT_COLOR)
-    if LEFT_ARM in rig.pose.bones and "IK_FK" in rig.pose.bones[LEFT_ARM]:
-        rig.pose.bones[LEFT_ARM]["IK_FK"] = 0.0  # the left arm in IK, so its hand control leads
-    ct = rig.pose.bones[LEFT_IK].constraints.new("COPY_TRANSFORMS")
-    ct.name, ct.target, ct.subtarget = SUPPORT_CON, arm, SUPPORT
-    drive_influence(ct, arm, SUPPORT_PROP)
+    if OLD_SUPPORT in arm.data.bones:  # from an older version
+        for o in context.view_layer.objects:
+            o.select_set(False)
+        context.view_layer.objects.active = arm
+        arm.select_set(True)
+        bpy.ops.object.mode_set(mode="EDIT")
+        arm.data.edit_bones.remove(arm.data.edit_bones[OLD_SUPPORT])
+        bpy.ops.object.mode_set(mode="OBJECT")
     arm["st_hand_rig"] = rig
     # light it like the character, so it matches the hand
     host = next((m for m in bpy.data.objects if m.type == "MESH" and m.find_armature() == rig
@@ -391,26 +392,245 @@ def connect(context, arm, rig):
     return host
 
 
-class STRINOVA_OT_weapon_hand(bpy.types.Operator):
-    bl_idname = "strinova.weapon_hand"
-    bl_label = "Conectar a la mano"
-    bl_description = ("Con el arma y un personaje seleccionados: el arma va a su mano derecha (gatillo) y su mano "
-                      "izquierda al soporte del arma. Cada mano tiene su interruptor en el panel")
+# ---------- left hand: a grip that slides along the weapon ----------
+SLIDER, SLIDER_GUIDE = "Agarre", "Agarre guia"  # weapon bones: the left hand's grip and its track
+LEFT_PROP, LEFT_CON = "st_left", "ST Mano izquierda (agarre)"
+LEFT_HAND, LEFT_ARM = "DEF-hand.L", "upper_arm_parent.L"
+SLIDE_FROM, SLIDE_TO = 0.08, 0.45  # track: from 8 cm ahead of the grip to 45% of the way to the muzzle
+SLIDE_AT = 0.3  # where the grip starts, as a share of the way to the muzzle
+SLIDER_COLOR = (0.35, 1.0, 0.4)
+
+
+def body_mesh(arm):
+    """The weapon's body: its biggest mesh (not the sight or a pendant hanging below)."""
+    meshes = [m for m in arm.children if m.type == "MESH" and m.find_armature() == arm and not m.name.startswith("WGT")]
+    return max(meshes, key=lambda m: len(m.data.vertices), default=None)
+
+
+def ensure_slider(context, arm):
+    """The Agarre bone: it slides along the barrel (Limit Location on its own Y, the barrel's axis)
+    and sticks to the underside of the weapon (Shrinkwrap projecting up onto the body mesh), with a
+    fixed guide bone showing its track. Weapon armature space: barrel toward -Y, top +Z."""
+    if SLIDER in arm.data.bones:
+        return True
+    body = body_mesh(arm)
+    if not body or "Root" not in arm.data.bones:
+        return False
+    to_arm = arm.matrix_world.inverted() @ body.matrix_world
+    pts = [to_arm @ v.co for v in body.data.vertices]
+    root = arm.data.bones["Root"].head_local
+    muzzle = min(p.y for p in pts)
+    start = root.y - SLIDE_FROM
+    length = max(0.02, (root.y - muzzle) * SLIDE_TO - SLIDE_FROM)
+    below = min(p.z for p in pts) - 0.03  # under the weapon: the shrinkwrap projects up onto its underside
+    for o in context.view_layer.objects:
+        o.select_set(False)
+    context.view_layer.objects.active = arm
+    arm.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
+    eb = arm.data.edit_bones
+    for name in (SLIDER, SLIDER_GUIDE):
+        b = eb.new(name)
+        b.head, b.tail = Vector((root.x, start, below)), Vector((root.x, start - 0.05, below))  # local Y = toward the muzzle
+        b.align_roll(Vector((0, 0, 1)))  # local Z = the weapon's top
+        b.parent, b.use_deform = eb["Root"], False
+    bpy.ops.object.mode_set(mode="OBJECT")
+    pb = arm.pose.bones[SLIDER]
+    lim = pb.constraints.new("LIMIT_LOCATION")
+    lim.owner_space = "LOCAL"
+    lim.use_min_x = lim.use_max_x = lim.use_min_y = lim.use_max_y = lim.use_min_z = lim.use_max_z = True
+    lim.max_y, lim.use_transform_limit = length, True
+    sw = pb.constraints.new("SHRINKWRAP")
+    sw.target, sw.shrinkwrap_type = body, "PROJECT"
+    sw.project_axis, sw.project_axis_space = "POS_Z", "LOCAL"
+    pb.lock_location = (True, False, True)
+    pb.location.y = min(max((root.y - muzzle) * SLIDE_AT - SLIDE_FROM, 0.0), length)  # along its track
+    coll = arm.data.collections.get(CONTROLS) or arm.data.collections.new(CONTROLS)
+    n = 24
+    ring = _shape("WGT-ST_weapon_slider", [(math.cos(math.tau * i / n), 0, math.sin(math.tau * i / n)) for i in range(n)],
+                  [(i, (i + 1) % n) for i in range(n)])
+    track = _shape("WGT-ST_weapon_track", [(0, 0, 0), (0, 1, 0), (-1, 0, 0), (1, 0, 0), (-1, 1, 0), (1, 1, 0)],
+                   [(0, 1), (2, 3), (4, 5)])
+    for name, shape, scale, trans in ((SLIDER, ring, (0.03,) * 3, (0, 0, 0.03)), (SLIDER_GUIDE, track, (0.02, length, 1), (0, 0, 0))):
+        p = arm.pose.bones[name]
+        for c in list(p.bone.collections):
+            c.unassign(p.bone)
+        coll.assign(p.bone)
+        p.custom_shape, p.use_custom_shape_bone_size = shape, False
+        p.custom_shape_scale_xyz, p.custom_shape_translation = scale, trans
+        common.paint(arm, name, SLIDER_COLOR)
+    guide = arm.pose.bones[SLIDER_GUIDE]
+    guide.bone.hide_select = True  # only shows the track: clicks go to the grip
+    guide.lock_location = guide.lock_rotation = guide.lock_scale = (True, True, True)
+    return True
+
+
+def connect_left(context, arm, rig):
+    """The left hand on the Agarre bone: the arm goes to IK, its hand control is placed on the grip
+    (palm on it, fingers along the barrel, thumb up) and hung from it with a Child Of. The hand control
+    still moves and turns to adjust the hold, relative to the grip; sliding the grip carries the hand."""
+    pb = rig.pose.bones.get(LEFT_IK)
+    if not pb or LEFT_HAND not in rig.data.bones or not ensure_slider(context, arm):
+        return False
+    old = pb.constraints.get(LEFT_CON)
+    if old:
+        pb.constraints.remove(old)
+    if LEFT_PROP not in arm:
+        arm[LEFT_PROP] = True
+        arm.id_properties_ui(LEFT_PROP).update(description="La mano izquierda del personaje va al agarre del arma")
+        arm.update_tag()
+    if LEFT_ARM in rig.pose.bones and "IK_FK" in rig.pose.bones[LEFT_ARM]:
+        rig.pose.bones[LEFT_ARM]["IK_FK"] = 0.0
+    # the hand control on the grip, by the same rule as the right hand (palm on it, fingers along the
+    # barrel, thumb up)...
+    context.view_layer.update()
+    grip = arm.matrix_world @ arm.pose.bones[SLIDER].matrix  # after its Limit Location and Shrinkwrap
+    hand = rig.data.bones[LEFT_HAND]
+    want = Matrix.Translation(grip.translation) @ arm.matrix_world.to_3x3().normalized().to_4x4()         @ grip_frame(rig, LEFT_HAND).inverted() @ hand.matrix_local
+    pb.matrix = rig.matrix_world.inverted() @ want @ hand.matrix_local.inverted() @ pb.bone.matrix_local
+    context.view_layer.update()
+    # ...then hung from it keeping where it is: Blender's own Set Inverse (a hand-made inverse broke
+    # with the rig away from the world origin)
+    c = pb.constraints.new("CHILD_OF")
+    c.name, c.target, c.subtarget = LEFT_CON, arm, SLIDER
+    for o in context.view_layer.objects:
+        o.select_set(False)
+    context.view_layer.objects.active = rig
+    rig.select_set(True)
+    bpy.ops.object.mode_set(mode="POSE")
+    rig.data.bones.active = pb.bone
+    with context.temp_override(active_object=rig, object=rig, active_pose_bone=pb):
+        bpy.ops.constraint.childof_set_inverse(constraint=LEFT_CON, owner="BONE")
+    bpy.ops.object.mode_set(mode="OBJECT")
+    drive_influence(c, arm, LEFT_PROP)
+    arm["st_hand_rig"] = rig
+    return True
+
+
+class STRINOVA_OT_weapon_left_hand(bpy.types.Operator):
+    bl_idname = "strinova.weapon_left_hand"
+    bl_label = "Conectar mano izquierda"
+    bl_description = ("Pone la mano izquierda del personaje en el agarre del arma (control verde que se desliza a lo "
+                      "largo del cañón). El control de la mano sigue sirviendo para ajustar cómo la apoya")
     bl_options = {"REGISTER", "UNDO"}
 
+    @classmethod
+    def poll(cls, context):
+        arm = weapon_rig(context.active_object)
+        return arm is not None and connected(arm) is not None
+
     def execute(self, context):
-        sel = list(context.selected_objects) + [context.active_object]
-        arm = next((weapon_rig(o) for o in sel if weapon_rig(o)), None)
-        rig = next((o.find_armature() if o.type == "MESH" else o for o in sel if o and not weapon_rig(o)
-                    and (o.find_armature() if o.type == "MESH" else o) is not None
-                    and RIGHT_HAND in getattr((o.find_armature() if o.type == "MESH" else o).data, "bones", {})), None)
-        if not arm or not rig:
-            self.report({"ERROR"}, "Selecciona el arma y el personaje (su rig o su malla) a la vez")
+        arm = weapon_rig(context.active_object)
+        rig = connected(arm)
+        if context.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+        if not connect_left(context, arm, rig):
+            self.report({"ERROR"}, "No se pudo crear el agarre en esta arma")
             return {"CANCELLED"}
+        for o in context.view_layer.objects:
+            o.select_set(False)
+        context.view_layer.objects.active = arm
+        arm.select_set(True)
+        self.report({"INFO"}, f"Mano izquierda de {rig.name} en el agarre de {arm.name}")
+        return {"FINISHED"}
+
+
+class STRINOVA_OT_weapon_hand(bpy.types.Operator):
+    bl_idname = "strinova.weapon_hand"
+    bl_label = "Conectar arma"
+    bl_description = ("Con el arma seleccionada: haz clic en un personaje en el viewport y el arma va a su mano "
+                      "derecha (gatillo). Esc o clic derecho cancela")
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return weapon_rig(context.active_object) is not None
+
+    def finish(self, context, arm, rig):
         if context.mode != "OBJECT":
             bpy.ops.object.mode_set(mode="OBJECT")
         host = connect(context, arm, rig)
+        for o in context.view_layer.objects:  # the weapon stays selected: the panel shows its hands
+            o.select_set(False)
+        context.view_layer.objects.active = arm
+        arm.select_set(True)
         self.report({"INFO"}, f"{arm.name} en la mano de {rig.name}" + (f", con la luz de {host.name}" if host else ""))
+        return {"FINISHED"}
+
+    def execute(self, context):  # scripts: the weapon and the character selected
+        sel = list(context.selected_objects) + [context.active_object]
+        arm = next((weapon_rig(o) for o in sel if o and weapon_rig(o)), None)
+        rig = next((character_rig(o) for o in sel if o and not weapon_rig(o) and character_rig(o)), None)
+        if not arm or not rig:
+            self.report({"ERROR"}, "Selecciona el arma y el personaje (su rig o su malla) a la vez")
+            return {"CANCELLED"}
+        return self.finish(context, arm, rig)
+
+    def invoke(self, context, event):
+        self.arm = weapon_rig(context.active_object)
+        context.window.cursor_modal_set("EYEDROPPER")
+        context.workspace.status_text_set("Haz clic en el personaje que sostendra el arma  |  Esc / clic derecho: cancelar")
+        context.window_manager.modal_handler_add(self)
+        return {"RUNNING_MODAL"}
+
+    def end(self, context):
+        context.window.cursor_modal_restore()
+        context.workspace.status_text_set(None)
+
+    def pick(self, context, event):
+        """The character under the mouse in any 3D viewport: a ray through the scene, past the weapon."""
+        for area in context.window.screen.areas:
+            if area.type != "VIEW_3D":
+                continue
+            region = next((r for r in area.regions if r.type == "WINDOW"), None)
+            if not region or not (region.x <= event.mouse_x < region.x + region.width
+                                  and region.y <= event.mouse_y < region.y + region.height):
+                continue
+            rv3d = area.spaces.active.region_3d
+            xy = (event.mouse_x - region.x, event.mouse_y - region.y)
+            origin = view3d_utils.region_2d_to_origin_3d(region, rv3d, xy)
+            direction = view3d_utils.region_2d_to_vector_3d(region, rv3d, xy)
+            dg = context.evaluated_depsgraph_get()
+            for _ in range(16):  # skip the weapon and whatever is not a character
+                hit, loc, _n, _i, ob, _m = context.scene.ray_cast(dg, origin, direction)
+                if not hit:
+                    return None
+                rig = character_rig(ob) if not weapon_rig(ob) else None
+                if rig:
+                    return rig
+                origin = loc + direction * 1e-4
+        return None
+
+    def modal(self, context, event):
+        if event.type in {"ESC", "RIGHTMOUSE"} and event.value == "PRESS":
+            self.end(context)
+            return {"CANCELLED"}
+        if event.type == "LEFTMOUSE" and event.value == "PRESS":
+            rig = self.pick(context, event)
+            if not rig:
+                self.report({"WARNING"}, "Ahi no hay un personaje con rig: haz clic sobre su malla")
+                return {"RUNNING_MODAL"}
+            self.end(context)
+            return self.finish(context, self.arm, rig)
+        return {"PASS_THROUGH"}  # navigate the view meanwhile
+
+
+class STRINOVA_OT_weapon_release(bpy.types.Operator):
+    bl_idname = "strinova.weapon_release"
+    bl_label = "Desconectar arma"
+    bl_description = "Suelta el arma de las manos del personaje: vuelve a donde estaba antes de conectarla"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        arm = weapon_rig(context.active_object)
+        return arm is not None and connected(arm) is not None
+
+    def execute(self, context):
+        arm = weapon_rig(context.active_object)
+        rig = connected(arm)
+        disconnect(arm)
+        self.report({"INFO"}, f"{arm.name} fuera de la mano de {rig.name}")
         return {"FINISHED"}
 
 
@@ -456,8 +676,10 @@ class STRINOVA_OT_import_weapon(bpy.types.Operator, ImportHelper):
             body = import_file(files[0])
             body_arm = next((o for o in body if o.type == "ARMATURE"), None)
             for f in files[1:]:
-                objs = import_file(f)
                 kind = piece_of(f)[0]
+                if kind == "magazine" and carries(body, PIECE_BONE[kind]):
+                    continue  # the body has its own (the loose one is for the reload animation)
+                objs = import_file(f)
                 if body_arm and objs and hang(context, objs, body_arm, PIECE_BONE[kind]):
                     hung.append(kind)
                     meshes_k = [o for o in objs if o.type == "MESH"]
@@ -465,6 +687,8 @@ class STRINOVA_OT_import_weapon(bpy.types.Operator, ImportHelper):
                     pieces.setdefault(label or PIECE_BONE[kind], []).extend(meshes_k)
             if body_arm:
                 controls = rig_weapon(context, body_arm, [o for o in body if o.type == "MESH"] + sum(pieces.values(), []), pieces)
+                if ensure_slider(context, body_arm):
+                    controls += 1
         finally:
             importer.gather_leftovers(context, coll, before, before_colls)
             vl.active_layer_collection = prev_active
@@ -490,9 +714,9 @@ class STRINOVA_OT_import_weapon(bpy.types.Operator, ImportHelper):
         for o in meshes:
             o.select_set(True)
         vl.objects.active = meshes[0] if meshes else new[0]
-        extra = f", con {' y '.join({'sight': 'mira', 'pendant': 'colgante'}[k] for k in hung)}" if hung else ""
+        extra = f", con {' y '.join({'sight': 'mira', 'pendant': 'colgante', 'magazine': 'cargador'}[k] for k in hung)}" if hung else ""
         self.report({"INFO"}, f"{coll.name}: {len(meshes)} malla(s){extra}, {controls} controles{shaded}")
         return {"FINISHED"}
 
 
-classes = (STRINOVA_OT_import_weapon, STRINOVA_OT_weapon_hand)
+classes = (STRINOVA_OT_import_weapon, STRINOVA_OT_weapon_hand, STRINOVA_OT_weapon_left_hand, STRINOVA_OT_weapon_release)

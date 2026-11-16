@@ -41,12 +41,18 @@ class STRINOVA_PT_panel(bpy.types.Panel):
             w = weapon.weapon_rig(context.active_object)
             if w:
                 body.label(text=w.name, icon="ARMATURE_DATA")
-                body.operator(weapon.STRINOVA_OT_weapon_hand.bl_idname, icon="VIEW_PAN")
-                hands = body.column(align=True)
-                for prop, text, icon in ((weapon.GRIP_PROP, "Mano derecha (gatillo)", "HAND"),
-                                         (weapon.SUPPORT_PROP, "Mano izquierda (soporte)", "HAND")):
-                    if prop in w:  # animatable: keyframe to let go or take the weapon
-                        hands.prop(w, f'["{prop}"]', text=text, toggle=True, icon=icon)
+                holder = weapon.connected(w)
+                if not holder:
+                    body.operator(weapon.STRINOVA_OT_weapon_hand.bl_idname, icon="EYEDROPPER")
+                else:
+                    body.label(text=f"En la mano de {holder.name}", icon="LINKED")
+                    hands = body.column(align=True)
+                    # animatable: keyframe to let go or take the weapon
+                    hands.prop(w, f'["{weapon.GRIP_PROP}"]', text="Mano derecha (gatillo)", toggle=True, icon="HAND")
+                    hands.operator(weapon.STRINOVA_OT_weapon_left_hand.bl_idname, icon="VIEW_PAN")
+                    if weapon.LEFT_PROP in w:
+                        hands.prop(w, f'["{weapon.LEFT_PROP}"]', text="Mano izquierda (agarre)", toggle=True, icon="HAND")
+                    body.operator(weapon.STRINOVA_OT_weapon_release.bl_idname, icon="UNLINKED")
         # shading and rig run inside the import; their operators stay registered for it (and F3)
         mesh = common.target_mesh(context)
         omod = mesh.modifiers.get("ST Outline") if mesh else None

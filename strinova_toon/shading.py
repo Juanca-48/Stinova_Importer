@@ -433,7 +433,12 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
     props = data.get("Properties", {}).get("BasePropertyOverrides", {})
     base_p = pick(tex_idx, t.get("BaseMap", ""), skin)
     if not base_p:
-        report[mat.name] = "sin BaseMap, se deja igual"
+        # a translucent colour layer with no texture: the shadow the eyelid casts on the eye
+        # (MI_Toon_EyeShadow, dark grey at 45%)
+        if cols.get("BaseColor") and props.get("BlendMode") == "BLEND_Translucent":
+            glass_material(mat, cols["BaseColor"], sca.get("Opacity", 0.5), report)
+        else:
+            report[mat.name] = "sin BaseMap, se deja igual"
         return
     nt = mat.node_tree
     nt.nodes.clear()
@@ -1029,7 +1034,7 @@ def setup_weapon_material(mat, data, tex_idx, weapon_group, report):
 
 
 def glass_material(mat, tint, opacity, report):
-    """Sight lenses: no texture, a tint and half transparent, unlit in the game (MSM_Unlit)."""
+    """A flat colour layer, partly transparent: sight lenses (unlit in the game) and the eyes' shadow."""
     nt = mat.node_tree
     nt.nodes.clear()
     out = node(nt, "ShaderNodeOutputMaterial", 600, 0)
