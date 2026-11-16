@@ -1,6 +1,6 @@
 """Rig: Rigify rig through Gacha Setup's NTE rigger, Strinova-specific fixes on top of it, and the
 constraint 'physics' for hair, clothes and chest."""
-import bpy, re, contextlib
+import bpy, re, math, contextlib
 from .common import target_mesh
 from . import shading, face, accessory
 
@@ -157,6 +157,34 @@ def fix_breasts(context, rig):
     return sides
 
 
+def bend_straight_fingers(context, arm):
+    """Some skeletons (Nora) have two-bone fingers whose tip continues its base in a straight line
+    (the FBX import extends a leaf bone along its parent). Gacha's NTE rigger takes the fingers' curl
+    plane from the index's first two bones and crashes ("Vector must be 2D or 3D") when they are in
+    line. Bend each straight tip like the most bent finger of the same hand; at rest the mesh doesn't
+    change (only the tip bone's rest direction does)."""
+    bones = arm.data.bones
+    hands = {b.parent.name for b in bones if re.fullmatch(r"Bip001-[LR]-Finger\d", b.name) and b.parent}
+    if not hands:
+        return 0
+    bpy.ops.object.mode_set(mode="EDIT")
+    eb = arm.data.edit_bones
+    n = 0
+    for hand in hands:
+        pairs = [(b, b.children[0]) for b in eb[hand].children if re.fullmatch(r"Bip001-[LR]-Finger\d", b.name)
+                 and len(b.children) == 1 and not b.children[0].children]  # base + tip
+        bend = lambda a, t: (a.tail - a.head).normalized().rotation_difference((t.tail - t.head).normalized())
+        bent = max((bend(a, t) for a, t in pairs), key=lambda q: q.angle, default=None)
+        if not bent or bent.angle < math.radians(1):
+            continue
+        for a, t in pairs:
+            if bend(a, t).angle < math.radians(0.5):
+                t.tail = t.head + bent @ (t.tail - t.head)
+                n += 1
+    bpy.ops.object.mode_set(mode="OBJECT")
+    return n
+
+
 @contextlib.contextmanager
 def others_aside(context, obj):
     """Gacha's NTE rigger works on the whole scene: it rebinds every mesh's Armature modifier to the
@@ -173,9 +201,20 @@ def others_aside(context, obj):
     def has_keep(c):
         return any(o in keep for o in c.all_objects)
     parked = [c for c in sc.collection.children if not has_keep(c)]
+    # relinking resets each view layer's exclude / hide of a collection and the hide of an object:
+    # remember them to put the user's hidden characters back hidden
+    def layer_cols(lc):
+        yield lc
+        for ch in lc.children:
+            yield from layer_cols(ch)
+    flags = ("exclude", "hide_viewport", "holdout", "indirect_only")
+    under = {x for p in parked for x in (p, *p.children_recursive)}
+    col_state = [(vl, lc.collection, {f: getattr(lc, f) for f in flags}) for vl in sc.view_layers
+                 for lc in layer_cols(vl.layer_collection) if lc.collection in under]
     for c in parked:
         sc.collection.children.unlink(c)
     moved = [(c, o) for c in (sc.collection, *sc.collection.children_recursive) for o in c.objects if o not in keep]
+    obj_hidden = [(vl, o) for vl in sc.view_layers for _, o in moved if o.hide_get(view_layer=vl)]
     for c, o in moved:
         c.objects.unlink(o)
     # its face rig takes the first mesh with shape keys in bpy.data, scene or not: point it at this one
@@ -205,6 +244,13 @@ def others_aside(context, obj):
             except ReferenceError:  # Gacha removed the collection
                 if not o.users_collection:
                     sc.collection.objects.link(o)
+        for vl, c, state in col_state:
+            lc = next((x for x in layer_cols(vl.layer_collection) if x.collection == c), None)
+            for f, v in (state.items() if lc else ()):
+                setattr(lc, f, v)
+        for vl, o in obj_hidden:
+            if o.name in vl.objects:
+                o.hide_set(True, view_layer=vl)
 
 
 class STRINOVA_OT_rig(bpy.types.Operator):
@@ -234,6 +280,7 @@ class STRINOVA_OT_rig(bpy.types.Operator):
             o.select_set(False)
         context.view_layer.objects.active = arm
         arm.select_set(True)
+        bend_straight_fingers(context, arm)
         # the lighting panel is shading's business: it steps aside while Gacha's rigger runs and
         # joins the new rig afterwards
         with others_aside(context, obj), shading.lighting_panel_aside(context, obj):

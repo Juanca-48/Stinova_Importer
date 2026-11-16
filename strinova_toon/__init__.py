@@ -8,12 +8,12 @@ bl_info = {
     "category": "Import-Export",
 }
 
-# Strinova (PaperMan) character setup, one module per concern: see the README's module table.
+# Strinova (PaperMan) character setup, one module per concern: see the module list in INSTRUCCIONES.txt.
 if "bpy" in locals():  # add-on reload: refresh the submodules too (import_module also loads new ones)
     import importlib
-    for _n in ("common", "shading", "face", "accessory", "rig", "paper", "importer"):
+    for _n in ("common", "shading", "face", "accessory", "rig", "paper", "importer", "weapon"):
         importlib.reload(importlib.import_module(f".{_n}", __package__))
-from . import common, shading, face, accessory, rig, paper, importer
+from . import common, shading, face, accessory, rig, paper, importer, weapon
 import bpy
 
 
@@ -33,6 +33,26 @@ class STRINOVA_PT_panel(bpy.types.Panel):
         col.separator()
         col.label(text="Carpeta del personaje:")
         col.prop(context.scene, "strinova_char_dir", text="")
+        # weapons are imported apart: many are shared by several skins, and a skin never brings its weapon
+        header, body = col.panel("strinova_weapons", default_closed=False)
+        header.label(text="Armas", icon="MOD_ARMATURE")
+        if body:
+            body.operator(weapon.STRINOVA_OT_import_weapon.bl_idname, icon="IMPORT")
+            w = weapon.weapon_rig(context.active_object)
+            if w:
+                body.label(text=w.name, icon="ARMATURE_DATA")
+                holder = weapon.connected(w)
+                if not holder:
+                    body.operator(weapon.STRINOVA_OT_weapon_hand.bl_idname, icon="EYEDROPPER")
+                else:
+                    body.label(text=f"En la mano de {holder.name}", icon="LINKED")
+                    hands = body.column(align=True)
+                    # animatable: keyframe to let go or take the weapon
+                    hands.prop(w, f'["{weapon.GRIP_PROP}"]', text="Mano derecha (gatillo)", toggle=True, icon="HAND")
+                    hands.operator(weapon.STRINOVA_OT_weapon_left_hand.bl_idname, icon="VIEW_PAN")
+                    if weapon.LEFT_PROP in w:
+                        hands.prop(w, f'["{weapon.LEFT_PROP}"]', text="Mano izquierda (agarre)", toggle=True, icon="HAND")
+                    body.operator(weapon.STRINOVA_OT_weapon_release.bl_idname, icon="UNLINKED")
         # shading and rig run inside the import; their operators stay registered for it (and F3)
         mesh = common.target_mesh(context)
         omod = mesh.modifiers.get("ST Outline") if mesh else None
@@ -65,7 +85,7 @@ class STRINOVA_PT_panel(bpy.types.Panel):
             col.label(text="Selecciona la malla o su armature", icon="INFO")
 
 
-classes = importer.classes + shading.classes + rig.classes + accessory.classes + (STRINOVA_PT_panel,)
+classes = importer.classes + weapon.classes + shading.classes + rig.classes + accessory.classes + (STRINOVA_PT_panel,)
 
 
 def register():

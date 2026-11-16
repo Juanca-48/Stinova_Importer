@@ -1,0 +1,291 @@
+STRINOVA TOON SETUP - GUÍA DE USO
+=================================
+
+Add-on de Blender para importar personajes de Strinova y dejarlos listos:
+toon shading, iluminación, rig con controles de cara y física de pelo y ropa.
+
+Compatible con los dos formatos de modelo: .uemodel y .fbx.
+
+
+1. REQUISITOS
+-------------
+
+- Blender 5.2.
+- Gacha Setup (add-on "setup_wizard"): obligatorio para generar el rig.
+  https://github.com/PaoloESAN/gacha-setup/releases
+- UEFormat v10 o superior: solo para importar archivos .uemodel.
+  Con .fbx no hace falta.
+  https://github.com/h4lfheart/UEFormat
+- Para el toon shading, las texturas (.png) del personaje, en una carpeta con
+  su nombre (por ejemplo ...\Kanami\, con sus skins dentro, como la que
+  genera FModel). Los datos de cada material (qué textura va en cada canal,
+  brillo, transparencia...) ya vienen incluidos en el add-on
+  (strinova_toon\materials.json), así que no hacen falta los .json de FModel.
+  Si la carpeta sí trae los .json, se usan esos (por si son más nuevos).
+  El modelo puede venir de otra fuente; sin las texturas, el importador, el
+  rig y la cara funcionan igual, pero los materiales quedan como vienen.
+
+
+2. INSTALACIÓN
+--------------
+
+Instalación normal:
+  1. En GitHub: botón verde "Code > Download ZIP". Descomprímelo.
+  2. Comprime la carpeta "strinova_toon" sola en un zip (strinova_toon.zip).
+     Si tienes git, desde la carpeta del repositorio:
+         git archive -o strinova_toon.zip HEAD strinova_toon/
+  3. En Blender: Edit > Preferences > Add-ons > Install from Disk, elige el zip.
+  4. Activa "Strinova Toon Setup" y "Gacha Setup".
+
+Para desarrollar (Blender carga el add-on directamente desde el repositorio):
+  Cierra Blender y en PowerShell ejecuta:
+
+    New-Item -ItemType Junction `
+      -Path "$env:APPDATA\Blender Foundation\Blender\5.2\scripts\addons\strinova_toon" `
+      -Target "<ruta del repositorio>\strinova_toon"
+
+  Luego actívalo en Preferences > Add-ons. Cada cambio se ve al reiniciar
+  Blender o al recargar el add-on.
+
+
+3. IMPORTAR UN PERSONAJE
+------------------------
+
+El panel está en el viewport 3D, pestaña "Strinova" (tecla N).
+
+- "Importar personaje" acepta:
+    * un archivo .uemodel o .fbx, o
+    * la carpeta de una skin: entra en ella sin elegir archivo y pulsa
+      Importar. Toma su modelo 3D (el de lobby si lo hay, porque trae las
+      expresiones) y su versión de papel, y los importa juntos.
+- Casillas debajo del botón:
+    * Aplicar Toon Shading: materiales, iluminación y contorno.
+    * Generar rig: rig con Gacha Setup, controles de cara y física.
+    * Incluir versión de papel: trae también la versión de papel de la skin.
+- "Carpeta del personaje": carpeta de la exportación de FModel con texturas
+  y materiales. Se rellena sola al importar desde FModel. Solo hace falta
+  tocarla al importar un .fbx guardado en otro sitio: el add-on reconoce el
+  personaje por el nombre de sus carpetas (.../<Personaje>/<Skin>/Mesh3D/...)
+  y busca sus texturas en la exportación de FModel.
+- Todo lo importado queda en una colección "<Personaje> <Skin>", por ejemplo
+  "Flavia S001" o "Kanami Ruiseñor".
+
+Qué modelo usar: cada skin trae el modelo de partida (Mesh3D) y el de lobby
+(Mesh3DLobby). Casi siempre solo el de lobby trae las expresiones de la cara.
+
+
+4. PANEL DEL PERSONAJE
+----------------------
+
+Con el personaje (malla o rig) seleccionado, el panel muestra una sección
+desplegable con su nombre:
+
+- Grosor contorno: grosor de la línea del contorno.
+- Versión de papel: cambia entre el modelo 3D y el de papel (ver punto 8).
+- Mostrar <accesorio>: muestra u oculta cada accesorio (ver punto 9).
+- Crear hueso de accesorio: ver punto 9.
+- Física: activa o desactiva la física al instante. Se puede animar.
+- Inercia pelo / flequillo / ropa / pecho: cuánto se retrasan y arrastran.
+  Valores iniciales: 0.56 / 0.28 / 0.32 / 0.20. El flequillo y los mechones
+  delanteros se mueven la mitad que el pelo de atrás.
+
+Estos valores son propiedades de cada rig: cada personaje tiene los suyos.
+También están en Object Properties > Custom Properties del rig.
+
+
+5. SHADING E ILUMINACIÓN
+------------------------
+
+- Los materiales se reconstruyen con las texturas y los datos de material
+  (incluidos en el add-on, o los .json de FModel si están): toon con luz
+  del sol, cara con sombra suave (SDF), normal map y matcap.
+- Contorno: casco invertido (modificador "ST Outline"). Sin contorno en cara
+  y ojos, como en el juego. Color: la textura base oscurecida.
+- Controles de iluminación (colección de huesos "Iluminacion" del rig):
+    * Ruedas "Luz" (lado iluminado) y "Ambiente" (sombra): la posición del
+      selector da el tono y la saturación; la barra, el brillo.
+    * "ST Sol": la luz llega desde este control hacia la cabeza y mueve las
+      sombras del cuerpo y de la cara.
+  Se animan en la misma acción que el personaje.
+- Cada personaje tiene su propio sol y sus controles: dos personajes pueden
+  estar iluminados distinto (uno en interior y otro en exterior).
+- Los tres empties de la cabeza (ST_HeadOrigin / Forward / Up) dan la
+  orientación de la cabeza para la sombra de la cara. Están desactivados en
+  el viewport para no estorbar; se activan con el icono del monitor en el
+  Outliner.
+
+
+6. RIG Y FÍSICA
+---------------
+
+- Rig Rigify generado con el rigger NTE de Gacha Setup (Strinova comparte
+  su esqueleto Bip001).
+- Física por constraints, como Gacha Setup: cada hueso de pelo, ropa y pecho
+  apunta a su hijo con un Damped Track, y al animar se queda atrás del cuerpo.
+- Limitación: el resultado depende de los fotogramas evaluados antes.
+  Reproducir de corrido no da lo mismo que saltar a un fotograma, y un render
+  de fotogramas sueltos puede diferir del viewport.
+- Seguidor de cabeza: la cabeza apunta al control "head-controller" delante
+  de la cara. Se apaga con "Use Head Controller" en el engranaje sobre la
+  cabeza (plate-settings).
+
+
+7. CARA
+-------
+
+Los controles de expresión (shape keys) se ordenan en secciones con título,
+cada una con su colección de huesos dentro de "Face":
+
+  A la izquierda de la cara: Ojos, Pupilas, Cejas.
+  A la derecha: Boca, Labios, Cabeza y otros.
+
+- Boca: los que abren la boca y los fonemas. Labios: los que la mueven sin
+  abrirla (sonrisas, comisuras, dientes, lengua). Se separan midiendo la
+  geometría del modelo al generar el rig.
+- Ojos, Pupilas y Cejas se dividen en "Ambos", "Derecha" e "Izquierda".
+  Mirando al personaje de frente, cada bloque queda del lado de la cara que
+  mueve.
+- Cada control es una barrita que se desliza hacia arriba (0 abajo, 1 arriba)
+  sobre una guía que marca el mínimo y el máximo.
+- Parpadeo: si el modelo cierra cada ojo con su propio control, se añade
+  "CTRL-ST Parpadeo" en el bloque "Ambos" de Ojos, que cierra los dos a la
+  vez. Los guiños siguen funcionando.
+- Mirada: control "Mirada" delante de la cara, con un objetivo por ojo
+  (Mirada.L / Mirada.R).
+- Huesos faciales: Fragrans, Yugiri y Mara (y los párpados del modelo de
+  partida de Chiyo) traen huesos en la cara. Aparecen como círculos en la
+  colección "Cara: Huesos". Dientes y lengua van en "Cara: Boca interior",
+  oculta al importar.
+
+
+8. VERSIÓN DE PAPEL
+-------------------
+
+Cada skin trae una versión de papel (carpeta Mesh2D): una lámina con el
+personaje pintado.
+
+- Con "Incluir versión de papel" (o importando la carpeta de la skin) se
+  importa junto al modelo 3D. También se puede importar después: si el
+  personaje 3D ya está en la escena con rig, se une a él.
+- La mueve el mismo rig y usa la misma iluminación.
+- El botón "Versión de papel" del panel (propiedad st_paper del rig) cambia
+  entre los dos en un solo fotograma. Con un keyframe en cada estado el
+  cambio es instantáneo. El juego lo disimula con la animación (un giro,
+  abrir los brazos): conviene hacer el cambio en mitad de un movimiento.
+- Sin su personaje 3D en la escena, la versión de papel se importa sola y
+  sin rig.
+
+
+9. ACCESORIOS (MÁSCARAS, SOMBREROS)
+-----------------------------------
+
+Cada accesorio tiene un hueso en la colección "Accesorios" (una pequeña
+máscara dibujada delante de la pieza). Es hijo de la cabeza: sigue al
+personaje, pero se puede mover, girar o escalar a 0. Además tiene un
+interruptor "Mostrar <accesorio>" en el panel que lo oculta, con su contorno,
+en viewport y render.
+
+- Máscaras con hueso propio (Fragrans, Kanami S211-S215, MoBai S206-S210,
+  Eika S111): el control se crea solo.
+- Máscaras de Eika (S001, S101, S103, S106, S107...): el control
+  "ACC-Mascara" se crea solo.
+- Otros accesorios (la mayoría de sombreros): selecciona la malla, entra en
+  Edit Mode, selecciona la pieza (L sobre ella) y pulsa "Crear hueso de
+  accesorio". La pieza queda rígida y se mueve solo con su hueso.
+
+
+10. ARMAS
+---------
+
+Las armas se importan aparte, con el botón "Importar arma" de la sección
+"Armas" del panel. Importar un personaje nunca trae su arma.
+
+- Cada skin de un arma son varias piezas: el cuerpo, su mira y a veces un
+  colgante, cada una también en versión lobby.
+- Elige el cuerpo del arma (o la carpeta de la skin, sin elegir archivo) y
+  se importa armada: la mira y el colgante se cuelgan de sus huesos (Sight,
+  Pendant) y siguen al arma. Si la skin no trae mira propia, usa la del arma
+  base.
+- En las opciones del navegador de archivos, "Incluir mira" decide si se trae
+  la mira o solo el cuerpo.
+- Si eliges cualquier otra pieza (una mira, un colgante, una versión lobby
+  suelta), se importa solo esa pieza.
+- Acepta .uemodel y .fbx. Cada arma queda en su colección "Arma <nombre>" y
+  no toca a los personajes de la escena.
+- Con "Aplicar Toon Shading" marcado, el arma recibe el toon del add-on: la
+  misma luz y sombra que los personajes, un brillo de matcap donde el arma
+  es metal pulido y su contorno. Las lentes de las miras quedan como cristal
+  translúcido.
+- Iluminación: si al importar tienes seleccionado un personaje (o un arma
+  que ya usa su luz), el arma usa el sol y los colores del panel de ese
+  personaje, así combina cuando la pongas en su mano. Si no, crea su
+  propio sol.
+- Las texturas se buscan en la carpeta SkinAssets de FModel: junto al
+  modelo si viene de FModel, o a partir de la "Carpeta del personaje" del
+  panel si es un .fbx.
+- Controles del arma (colección de huesos "Arma"):
+    * Marco amarillo (Root): mueve y gira el arma entera.
+    * Círculos celestes: las piezas que se mueven, como cargador
+      (Magazine), cerrojo (Pull), silenciador (Suppressor), empuñadura
+      (Foregrip) o la hoja de la katana.
+    * Círculos rosados: la mira y el colgante.
+  Los puntos de referencia del juego (boca del cañón, eyección de casquillos,
+  cámara de apuntado...) quedan en la colección "Sockets", oculta.
+- Conectar arma: selecciona el arma y pulsa "Conectar arma" en la sección
+  Armas. El cursor pasa a cuentagotas: haz clic sobre el personaje en el
+  viewport (Esc o clic derecho cancela; mientras tanto puedes mover la
+  vista). El arma va a su mano derecha y toma también la luz de ese
+  personaje. Ya conectada, el panel muestra a quién está conectada, los
+  controles de las dos manos y "Desconectar arma", que la suelta y la
+  devuelve a donde estaba antes de conectarla.
+  El interruptor "Mano derecha (gatillo)" la suelta o la vuelve a tomar
+  (se puede animar). Conectada, el arma sigue la mano derecha, con la
+  empuñadura en la palma, el cañón en la dirección de los dedos y la parte
+  de arriba hacia el pulgar. Apagado, el arma vuelve a donde estaba.
+  Si el brazo derecho estaba en reposo, al conectar se coloca en la pose de
+  reposo del juego ("low ready"): la empuñadura en el lado derecho de la
+  cintura, la culata junto a las costillas y el cañón hacia delante y abajo,
+  cruzando hacia la izquierda. Un brazo ya posado no se toca.
+  Para ajustar el agarre usa el control Root del arma (marco amarillo), no
+  muevas el objeto del arma: mientras está conectada, mover el objeto se
+  suma al agarre y la saca de la mano.
+- Mano izquierda: cada arma trae el control verde "Agarre", un anillo bajo
+  el cañón que se desliza a lo largo del arma (solo en esa dirección, por la
+  guía verde que marca su recorrido) y se pega a la parte de abajo del arma.
+  Con el arma ya conectada y seleccionada, "Conectar mano izquierda" pasa el brazo
+  izquierdo a IK, pone la mano en el agarre (palma en él, dedos a lo largo
+  del cañón, pulgar arriba) y la engancha:
+    * Deslizar el agarre (G) lleva la mano a lo largo del arma.
+    * El control de la mano izquierda sigue sirviendo para ajustar cómo la
+      apoya (moverla o girarla un poco), sin soltarla del arma.
+    * El interruptor "Mano izquierda (agarre)" la suelta o la toma (se puede
+      animar).
+  Si el agarre queda más lejos de lo que alcanza el brazo, la mano se queda
+  corta: acerca el agarre a la empuñadura o el arma al cuerpo.
+
+
+11. LIMITACIONES CONOCIDAS
+--------------------------
+
+- La sombra es un tinte fijo, no las rampas de color del juego.
+- Un .fbx exportado con herramientas distintas a Blender puede venir con otra
+  escala o con los ejes de los huesos cambiados.
+- La física no reacciona al mover el hueso root ni al levantar las piernas.
+
+
+12. PARA DESARROLLADORES
+------------------------
+
+Módulos (carpeta strinova_toon):
+  importer.py   Importar .uemodel / .fbx / carpeta de skin y detectar la
+                carpeta de FModel.
+  shading.py    Materiales toon, sol y empties de la cabeza, panel de
+                iluminación y contorno.
+  rig.py        Rig con Gacha Setup, arreglos sobre él y física.
+  face.py       Secciones de la cara, mirada, parpadeo y huesos faciales.
+  paper.py      Versión de papel y el cambio 3D / papel.
+  accessory.py  Huesos e interruptores de accesorios.
+  weapon.py     Importar armas y objetos.
+  common.py     Utilidades compartidas.
+  materials.json  Datos de todos los materiales de los personajes.
+  __init__.py   Panel y registro.
