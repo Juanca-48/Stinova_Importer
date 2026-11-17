@@ -89,7 +89,6 @@ desplegable con su nombre:
 - Grosor contorno: grosor de la línea del contorno.
 - Versión de papel: cambia entre el modelo 3D y el de papel (ver punto 8).
 - Mostrar <accesorio>: muestra u oculta cada accesorio (ver punto 9).
-- Crear hueso de accesorio: ver punto 9.
 - Física: activa o desactiva la física al instante. Se puede animar.
 - Inercia pelo / flequillo / ropa / pecho: cuánto se retrasan y arrastran.
   Valores iniciales: 0.56 / 0.28 / 0.32 / 0.20. El flequillo y los mechones
@@ -198,9 +197,8 @@ en viewport y render.
   Eika S111): el control se crea solo.
 - Máscaras de Eika (S001, S101, S103, S106, S107...): el control
   "ACC-Mascara" se crea solo.
-- Otros accesorios (la mayoría de sombreros): selecciona la malla, entra en
-  Edit Mode, selecciona la pieza (L sobre ella) y pulsa "Crear hueso de
-  accesorio". La pieza queda rígida y se mueve solo con su hueso.
+- Otros accesorios (la mayoría de sombreros) comparten los pesos de la
+  cabeza o del pelo y no tienen hueso propio: se mueven con ellos.
 
 
 10. ARMAS

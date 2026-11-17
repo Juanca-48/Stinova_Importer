@@ -1,7 +1,6 @@
 """Accessory bones: masks and hats that follow the head but can be moved, or scaled to 0 to take
-them off. Bones the model already has (mask_bone, maskA_L_bone...) get a control at import; for the
-rest (most hats share the head's or a hair bone's weights) the user selects the piece in Edit Mode
-and the operator gives it its own bone, weighting it rigidly to that bone."""
+them off. Bones the model already has (mask_bone, maskA_L_bone...) and Eika's masks get a control at
+import. Most hats share the head's or a hair bone's weights, so they get none."""
 import bpy, re
 from mathutils import Vector
 from . import shading, common
@@ -11,15 +10,6 @@ COLL = "Accesorios"
 PREFIX = "ACC-"
 OWN_BONE = re.compile(r"(?i)mask")  # accessory bones found in Strinova skeletons
 COLOR = (1.0, 0.75, 0.1)
-
-
-def body_parent(rig, name):
-    """First body bone (DEF-/ORG-) up from `name`: a mask weighted to a hair bone (Aika S001) must
-    follow the head, not the hair's physics."""
-    b = rig.data.bones.get(name)
-    while b and b.parent and not b.name.startswith(("DEF-", "ORG-")):
-        b = b.parent
-    return b.name if b else None
 
 
 MASK_SIZE = 0.025  # half width of the widget (m)
@@ -161,71 +151,3 @@ def add_headgear(context, rig, mesh):
     make_control(rig, name, points)
     add_toggle(rig, mesh, name, idx)
     return True
-
-
-class STRINOVA_OT_accessory(bpy.types.Operator):
-    bl_idname = "strinova.accessory_bone"
-    bl_label = "Create accessory bone"
-    bl_description = ("In Edit Mode, select the piece (mask, hat...) and create a bone that moves it: "
-                      "it follows the head, but can be moved or scaled to 0 to remove it")
-    bl_options = {"REGISTER", "UNDO"}
-
-    name: bpy.props.StringProperty(name="Name", default="Accesorio")  # the bone's name
-
-    @classmethod
-    def poll(cls, context):
-        ob = context.edit_object
-        return context.mode == "EDIT_MESH" and ob and ob.find_armature() is not None
-
-    def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self)
-
-    def execute(self, context):
-        mesh = context.edit_object
-        rig = mesh.find_armature()
-        bpy.ops.object.mode_set(mode="OBJECT")
-        sel = [v.index for v in mesh.data.vertices if v.select]
-        if not sel:
-            bpy.ops.object.mode_set(mode="EDIT")
-            self.report({"ERROR"}, rpt_("Select the piece in Edit Mode (L over it)"))
-            return {"CANCELLED"}
-        # parent: the body bone that most of the piece follows today
-        total = {}
-        for i in sel:
-            for e in mesh.data.vertices[i].groups:
-                n = mesh.vertex_groups[e.group].name
-                total[n] = total.get(n, 0.0) + e.weight
-        top = max((n for n in total if n in rig.data.bones), key=total.get, default=None)
-        parent = body_parent(rig, top) if top else None
-        points = [mesh.matrix_world @ mesh.data.vertices[i].co for i in sel]
-        center = sum(points, Vector()) / len(points)
-        size = max(max(p[k] for p in points) - min(p[k] for p in points) for k in range(3))
-
-        for o in context.view_layer.objects:
-            o.select_set(False)
-        context.view_layer.objects.active = rig
-        rig.select_set(True)
-        bpy.ops.object.mode_set(mode="EDIT")
-        e = rig.data.edit_bones.new(PREFIX + self.name)
-        e.head = rig.matrix_world.inverted() @ center
-        e.tail = e.head + Vector((0, 0, max(size / 2, 0.03)))
-        e.parent = rig.data.edit_bones.get(parent) if parent else None
-        e.use_deform = True
-        bone = e.name
-        bpy.ops.object.mode_set(mode="OBJECT")
-
-        for g in mesh.vertex_groups:  # rigid: the piece follows only its bone
-            g.remove(sel)
-        mesh.vertex_groups.new(name=bone).add(sel, 1.0, "REPLACE")
-        make_control(rig, bone, points)
-        add_toggle(rig, mesh, bone, sel)
-
-        bpy.ops.object.mode_set(mode="POSE")
-        for pb in rig.pose.bones:  # Blender 5: selection lives on the pose bone
-            pb.select = pb.name == bone
-        rig.data.bones.active = rig.data.bones[bone]
-        self.report({"INFO"}, rpt_("{}: {} vertices, follows {}").format(bone, len(sel), parent or rpt_("the rig")))
-        return {"FINISHED"}
-
-
-classes = (STRINOVA_OT_accessory,)

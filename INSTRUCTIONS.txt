@@ -92,7 +92,6 @@ section with its name:
 - Outline width: thickness of the outline.
 - Paper version: switches between the 3D model and the paper one (see 8).
 - Show <accessory>: shows or hides each accessory (see 9).
-- Create accessory bone: see 9.
 - Physics: turns physics on or off instantly. Animatable.
 - Hair / Bangs / Clothes / Chest inertia: how much they lag and drag.
   Starting values: 0.56 / 0.28 / 0.32 / 0.20. Bangs and the front locks
@@ -202,9 +201,8 @@ the viewport and the render.
   Eika S111): the control is created automatically.
 - Eika's masks (S001, S101, S103, S106, S107...): the "ACC-Mascara" control
   is created automatically.
-- Other accessories (most hats): select the mesh, go into Edit Mode, select
-  the piece (L over it) and press "Create accessory bone". The piece becomes
-  rigid and moves only with its bone.
+- Other accessories (most hats) share the head's or the hair's weights and
+  have no bone of their own: they move with them.
 
 
 10. WEAPONS

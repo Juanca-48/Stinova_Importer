@@ -60,16 +60,7 @@ ES = {
     "Rig ready: {}, {} chains with physics": "Rig listo: {}, {} cadenas con física",
     # paper version and accessories
     "Shows the paper version instead of the 3D model": "Muestra la versión de papel en lugar del modelo 3D",
-    "Create accessory bone": "Crear hueso de accesorio",
-    "In Edit Mode, select the piece (mask, hat...) and create a bone that moves it: "
-    "it follows the head, but can be moved or scaled to 0 to remove it":
-        "En Edit Mode, selecciona la pieza (máscara, sombrero...) y crea un hueso que la mueve: "
-        "sigue a la cabeza, pero se puede mover o escalar a 0 para quitarla",
-    "Name": "Nombre",
     "Shows or hides {} (animatable)": "Muestra u oculta {} (se puede animar)",
-    "Select the piece in Edit Mode (L over it)": "Selecciona la pieza en Edit Mode (L sobre ella)",
-    "{}: {} vertices, follows {}": "{}: {} vértices, sigue a {}",
-    "the rig": "el rig",
     # weapons
     "Import weapon": "Importar arma",
     "Imports a weapon (.uemodel or .fbx) into its own collection. With the weapon's body or the "

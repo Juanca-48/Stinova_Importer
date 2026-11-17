@@ -73,8 +73,6 @@ class STRINOVA_PT_panel(bpy.types.Panel):
                 for k in sorted(k for k in arm.keys() if k.startswith(accessory.SHOW)):  # one per accessory
                     label = k[len(accessory.SHOW):].removeprefix(accessory.PREFIX)
                     body.prop(arm, f'["{k}"]', text=common.iface_("Show {}").format(label), icon="HIDE_OFF")
-                # greyed out until a piece is selected in Edit Mode
-                body.operator(accessory.STRINOVA_OT_accessory.bl_idname, icon="BONE_DATA")
         if arm and rig.PHYSICS_PROP in arm:
             body.separator()
             body.prop(arm, f'["{rig.PHYSICS_PROP}"]', text="Physics", text_ctxt=i18n.CTX)  # checkbox
@@ -87,7 +85,7 @@ class STRINOVA_PT_panel(bpy.types.Panel):
             col.label(text="Select the mesh or its armature", icon="INFO")
 
 
-classes = importer.classes + weapon.classes + shading.classes + rig.classes + accessory.classes + (STRINOVA_PT_panel,)
+classes = importer.classes + weapon.classes + shading.classes + rig.classes + (STRINOVA_PT_panel,)
 
 
 def register():
