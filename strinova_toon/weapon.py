@@ -127,13 +127,13 @@ def carries(objs, bone):
     return False
 
 
-PIECE_LABEL = {"sight": "Mira", "pendant": "Colgante", "magazine": "Cargador"}  # bone names of a piece once joined to the weapon's rig
+PIECE_LABEL = {"sight": "Sight Part", "pendant": "Pendant Part", "magazine": "Magazine Part"}  # bone names of a piece once joined to the weapon's rig
 
 
 def join_piece(context, body_arm, objs, socket, label):
     """Merge a hung piece's own skeleton (a sight's scope parts, a pendant's chain) into the weapon's,
     its root under the socket bone, so the whole weapon is one rig. Its bones are renamed by role
-    (Mira, Mira Root_01...; Blender renames the vertex groups too). Returns the piece's root bone,
+    (Sight Part, Sight Part Root_01...; Blender renames the vertex groups too). Returns the piece's root bone,
     or None for a piece without skeleton (it stays parented to the socket)."""
     arm = next((o for o in objs if o.type == "ARMATURE"), None)
     if not arm or not arm.data.bones:
@@ -169,7 +169,7 @@ def join_piece(context, body_arm, objs, socket, label):
 
 
 # ---------- controls ----------
-CONTROLS = "Arma"  # bone collection with the controls
+CONTROLS = "Weapon"  # bone collection with the controls
 SOCKETS = "Sockets"  # game attachment points (muzzle, shell drop, camera...): hidden
 ROOT_COLOR = (1.0, 0.75, 0.1)
 PART_COLOR = (0.2, 0.75, 1.0)
@@ -254,7 +254,7 @@ def rig_weapon(context, arm, meshes, pieces):
 
 # ---------- hands ----------
 GRIP_PROP = "st_grip"  # weapon rig toggle: in the right hand (trigger) or not
-GRIP_CON = "ST Mano derecha"
+GRIP_CON = "ST Right Hand"
 # left hand support, removed: only cleaned up from rigs connected by an older version
 OLD_SUPPORT_PROP, OLD_SUPPORT_CON, OLD_SUPPORT, LEFT_IK = "st_support", "ST Mano izquierda", "Soporte", "hand_ik.L"
 RIGHT_HAND = "DEF-hand.R"
@@ -394,8 +394,8 @@ def connect(context, arm, rig):
 
 
 # ---------- left hand: a grip that slides along the weapon ----------
-SLIDER, SLIDER_GUIDE = "Agarre", "Agarre guia"  # weapon bones: the left hand's grip and its track
-LEFT_PROP, LEFT_CON = "st_left", "ST Mano izquierda (agarre)"
+SLIDER, SLIDER_GUIDE = "ST Grip", "ST Grip Guide"  # weapon bones: the left hand's grip and its track
+LEFT_PROP, LEFT_CON = "st_left", "ST Left Hand (Grip)"
 LEFT_HAND, LEFT_ARM = "DEF-hand.L", "upper_arm_parent.L"
 SLIDE_FROM, SLIDE_TO = 0.08, 0.45  # track: from 8 cm ahead of the grip to 45% of the way to the muzzle
 SLIDE_AT = 0.3  # where the grip starts, as a share of the way to the muzzle
@@ -674,7 +674,7 @@ class STRINOVA_OT_import_weapon(bpy.types.Operator, ImportHelper):
         # own collection, active while importing, like a character (see importer.execute)
         vl = context.view_layer
         prev_active = vl.active_layer_collection
-        coll = bpy.data.collections.new(f"Arma {weapon_name(files[0])}")
+        coll = bpy.data.collections.new(f"Weapon {weapon_name(files[0])}")
         context.scene.collection.children.link(coll)
         vl.active_layer_collection = importer._layer_collection(vl.layer_collection, coll)
         before, before_colls = set(bpy.data.objects), set(bpy.data.collections)

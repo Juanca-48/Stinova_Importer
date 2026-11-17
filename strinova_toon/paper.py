@@ -93,7 +93,7 @@ def attach(context, paper, host):
     return unmapped  # the importer adds the switch after the shading (its modifiers go last)
 
 
-HIDE = "ST Ocultar"
+HIDE = "ST Hide"
 
 
 def hide_group():
@@ -113,7 +113,7 @@ def hide_group():
 
 
 def ensure_switch(rig):
-    """rig["st_paper"]: off = 3D model, on = paper. Each mesh ends with an "ST Ocultar" modifier
+    """rig["st_paper"]: off = 3D model, on = paper. Each mesh ends with an "ST Hide" modifier
     that the property switches on to hide it."""
     for o in bpy.data.objects:
         if o.type != "MESH" or o.find_armature() != rig:

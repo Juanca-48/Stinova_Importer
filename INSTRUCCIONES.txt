@@ -8,6 +8,10 @@ Compatible con los dos formatos de modelo: .uemodel y .fbx.
 
 Idioma: el panel sale en español si Blender tiene la interfaz en español
 (Edit > Preferences > Interface > Translation); si no, en inglés.
+Lo que el add-on crea dentro de la escena (colecciones de huesos, controles,
+colecciones) tiene nombres en inglés. Las escenas hechas con versiones
+anteriores a la 1.1.1, que usaban nombres en español, se renombran solas al
+abrirlas.
 English guide: INSTRUCTIONS.txt.
 
 
@@ -106,10 +110,10 @@ También están en Object Properties > Custom Properties del rig.
   del sol, cara con sombra suave (SDF), normal map y matcap.
 - Contorno: casco invertido (modificador "ST Outline"). Sin contorno en cara
   y ojos, como en el juego. Color: la textura base oscurecida.
-- Controles de iluminación (colección de huesos "Iluminacion" del rig):
-    * Ruedas "Luz" (lado iluminado) y "Ambiente" (sombra): la posición del
+- Controles de iluminación (colección de huesos "Lighting" del rig):
+    * Ruedas "Light" (lado iluminado) y "Ambient" (sombra): la posición del
       selector da el tono y la saturación; la barra, el brillo.
-    * "ST Sol": la luz llega desde este control hacia la cabeza y mueve las
+    * "ST Sun" (sol): la luz llega desde este control hacia la cabeza y mueve las
       sombras del cuerpo y de la cara.
   Se animan en la misma acción que el personaje.
 - Cada personaje tiene su propio sol y sus controles: dos personajes pueden
@@ -144,25 +148,26 @@ También están en Object Properties > Custom Properties del rig.
 Los controles de expresión (shape keys) se ordenan en secciones con título,
 cada una con su colección de huesos dentro de "Face":
 
-  A la izquierda de la cara: Ojos, Pupilas, Cejas.
-  A la derecha: Boca, Labios, Cabeza y otros.
+  A la izquierda de la cara: Eyes (ojos), Pupils (pupilas), Brows (cejas).
+  A la derecha: Mouth (boca), Lips (labios), Head & Other (cabeza y otros).
 
-- Boca: los que abren la boca y los fonemas. Labios: los que la mueven sin
+- Mouth: los que abren la boca y los fonemas. Lips: los que la mueven sin
   abrirla (sonrisas, comisuras, dientes, lengua). Se separan midiendo la
   geometría del modelo al generar el rig.
-- Ojos, Pupilas y Cejas se dividen en "Ambos", "Derecha" e "Izquierda".
+- Eyes, Pupils y Brows se dividen en "Both" (ambos), "Right" (derecha) y
+  "Left" (izquierda).
   Mirando al personaje de frente, cada bloque queda del lado de la cara que
   mueve.
 - Cada control es una barrita que se desliza hacia arriba (0 abajo, 1 arriba)
   sobre una guía que marca el mínimo y el máximo.
 - Parpadeo: si el modelo cierra cada ojo con su propio control, se añade
-  "CTRL-ST Parpadeo" en el bloque "Ambos" de Ojos, que cierra los dos a la
+  "CTRL-ST Blink" en el bloque "Both" de Eyes, que cierra los dos a la
   vez. Los guiños siguen funcionando.
-- Mirada: control "Mirada" delante de la cara, con un objetivo por ojo
-  (Mirada.L / Mirada.R).
+- Mirada: control "Gaze" delante de la cara, con un objetivo por ojo
+  (Gaze.L / Gaze.R).
 - Huesos faciales: Fragrans, Yugiri y Mara (y los párpados del modelo de
   partida de Chiyo) traen huesos en la cara. Aparecen como círculos en la
-  colección "Cara: Huesos". Dientes y lengua van en "Cara: Boca interior",
+  colección "Face: Bones". Dientes y lengua van en "Face: Inner Mouth",
   oculta al importar.
 
 
@@ -187,7 +192,7 @@ personaje pintado.
 9. ACCESORIOS (MÁSCARAS, SOMBREROS)
 -----------------------------------
 
-Cada accesorio tiene un hueso en la colección "Accesorios" (una pequeña
+Cada accesorio tiene un hueso en la colección "Accessories" (una pequeña
 máscara dibujada delante de la pieza). Es hijo de la cabeza: sigue al
 personaje, pero se puede mover, girar o escalar a 0. Además tiene un
 interruptor "Mostrar <accesorio>" en el panel que lo oculta, con su contorno,
@@ -196,7 +201,7 @@ en viewport y render.
 - Máscaras con hueso propio (Fragrans, Kanami S211-S215, MoBai S206-S210,
   Eika S111): el control se crea solo.
 - Máscaras de Eika (S001, S101, S103, S106, S107...): el control
-  "ACC-Mascara" se crea solo.
+  "ACC-Mask" se crea solo.
 - Otros accesorios (la mayoría de sombreros) comparten los pesos de la
   cabeza o del pelo y no tienen hueso propio: se mueven con ellos.
 
@@ -217,7 +222,7 @@ Las armas se importan aparte, con el botón "Importar arma" de la sección
   la mira o solo el cuerpo.
 - Si eliges cualquier otra pieza (una mira, un colgante, una versión lobby
   suelta), se importa solo esa pieza.
-- Acepta .uemodel y .fbx. Cada arma queda en su colección "Arma <nombre>" y
+- Acepta .uemodel y .fbx. Cada arma queda en su colección "Weapon <nombre>" y
   no toca a los personajes de la escena.
 - Con "Aplicar Toon Shading" marcado, el arma recibe el toon del add-on: la
   misma luz y sombra que los personajes, un brillo de matcap donde el arma
@@ -230,7 +235,7 @@ Las armas se importan aparte, con el botón "Importar arma" de la sección
 - Las texturas se buscan en la carpeta SkinAssets de FModel: junto al
   modelo si viene de FModel, o a partir de la "Carpeta del personaje" del
   panel si es un .fbx.
-- Controles del arma (colección de huesos "Arma"):
+- Controles del arma (colección de huesos "Weapon"):
     * Marco amarillo (Root): mueve y gira el arma entera.
     * Círculos celestes: las piezas que se mueven, como cargador
       (Magazine), cerrojo (Pull), silenciador (Suppressor), empuñadura
@@ -256,7 +261,7 @@ Las armas se importan aparte, con el botón "Importar arma" de la sección
   Para ajustar el agarre usa el control Root del arma (marco amarillo), no
   muevas el objeto del arma: mientras está conectada, mover el objeto se
   suma al agarre y la saca de la mano.
-- Mano izquierda: cada arma trae el control verde "Agarre", un anillo bajo
+- Mano izquierda: cada arma trae el control verde "ST Grip" (agarre), un anillo bajo
   el cañón que se desliza a lo largo del arma (solo en esa dirección, por la
   guía verde que marca su recorrido) y se pega a la parte de abajo del arma.
   Con el arma ya conectada y seleccionada, "Conectar mano izquierda" pasa el brazo
@@ -296,5 +301,7 @@ Módulos (carpeta strinova_toon):
   common.py     Utilidades compartidas.
   i18n.py       Traducción al español de la interfaz. Los textos se escriben
                 en inglés; cada texto nuevo necesita su línea aquí.
+  migrate.py    Renombra lo que crearon versiones anteriores con nombres en
+                español.
   materials.json  Datos de todos los materiales de los personajes.
   __init__.py   Panel y registro.

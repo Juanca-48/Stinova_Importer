@@ -164,10 +164,10 @@ def object_color(nt, name, x, y):
 
 def toon_mix(nt, lit, base, tint, x, y):
     """Lit side = base * light colour, shadow side = base * shadow tint * ambient colour."""
-    with section(nt, "Color de luz y ambiente (panel de iluminacion)", "color"):
+    with section(nt, "Light and ambient colour (lighting panel)", "color"):
         light = object_color(nt, "st_light_pick", x - 200, y + 250)
         ambient = object_color(nt, "st_ambient_pick", x - 200, y - 250)
-    with section(nt, "Mezcla luz / sombra", "color"):
+    with section(nt, "Light / shadow mix", "color"):
         shadow = mix_rgb(nt, "MULTIPLY", 1.0, mix_rgb(nt, "MULTIPLY", 1.0, base, tint, x, y - 100), ambient, x + 150, y - 100)
         return mix_rgb(nt, "MIX", lit, shadow, mix_rgb(nt, "MULTIPLY", 1.0, base, light, x, y + 100), x + 300, y)
 
@@ -219,15 +219,15 @@ def build_toon_group():
     sock(ng, "MatCap Pow", "INPUT", "NodeSocketFloat", 0.0)
     sock(ng, "Emission", "INPUT", "NodeSocketColor", (0, 0, 0, 1))
     nt = ng
-    with section(nt, "Entradas", "in"):
+    with section(nt, "Inputs", "in"):
         gi = node(nt, "NodeGroupInput", -900, 0)
     go = node(nt, "NodeGroupOutput", 900, 0)
-    with section(nt, "Luz: N.L con la direccion del sol (lado iluminado)", "light"):
+    with section(nt, "Light: N.L with the sun direction (lit side)", "light"):
         L = attr(nt, "lightDir", -700, 300)
         N = vmath(nt, "NORMALIZE", gi.outputs["Normal"], None, -700, 100).outputs[0]
         ndl = vmath(nt, "DOT_PRODUCT", N, L, -400, 200).outputs["Value"]
         lit = soft_step(nt, ndl, gi.outputs["Middle Value"], gi.outputs["Softness"], -200, 200)
-    with section(nt, "UV del MatCap (normal en espacio de camara)", "tex"):
+    with section(nt, "MatCap UV (camera-space normal)", "tex"):
         vt = node(nt, "ShaderNodeVectorTransform", -400, -250, vector_type="NORMAL", convert_from="WORLD", convert_to="CAMERA")
         nt.links.new(N, vt.inputs[0])
         ma = node(nt, "ShaderNodeVectorMath", -200, -250, operation="MULTIPLY_ADD")
@@ -236,10 +236,10 @@ def build_toon_group():
         ma.inputs[2].default_value = (0.5, 0.5, 0.5)
         nt.links.new(ma.outputs[0], go.inputs["MatCap UV"])
     col = toon_mix(nt, lit, gi.outputs["Base Color"], gi.outputs["Shadow Tint"], 100, 100)
-    with section(nt, "MatCap y emision", "color"):
+    with section(nt, "MatCap and emission", "color"):
         col = mix_rgb(nt, "ADD", gi.outputs["MatCap Pow"], col, gi.outputs["MatCap"], 450, 100)
         col = mix_rgb(nt, "ADD", 1.0, col, gi.outputs["Emission"], 600, 100)
-    with section(nt, "Salida (emision + transparencia)", "out", extra=(go,)):
+    with section(nt, "Output (emission + transparency)", "out", extra=(go,)):
         shader_out(nt, col, gi.outputs["Alpha"], go, 650, -150)
     arrange_sections(nt)
     return ng
@@ -258,14 +258,14 @@ def build_face_group():
     sock(ng, "Softness", "INPUT", "NodeSocketFloat", 0.01)
     sock(ng, "Flip Side", "INPUT", "NodeSocketFloat", 0.0)  # set 1 if shadow lands on the wrong side
     nt = ng
-    with section(nt, "Entradas", "in"):
+    with section(nt, "Inputs", "in"):
         gi = node(nt, "NodeGroupInput", -1300, 0)
     go = node(nt, "NodeGroupOutput", 900, 0)
-    with section(nt, "Vectores: luz y orientacion de la cabeza", "light"):
+    with section(nt, "Vectors: light and head orientation", "light"):
         L = attr(nt, "lightDir", -1100, 400)
         F = attr(nt, "headForward", -1100, 250)
         U = attr(nt, "headUp", -1100, 100)
-    with section(nt, "Luz proyectada en el plano de la cabeza (delante / lado)", "light"):
+    with section(nt, "Light projected on the head plane (front / side)", "light"):
         lu = vmath(nt, "DOT_PRODUCT", L, U, -800, 400).outputs["Value"]
         su = node(nt, "ShaderNodeVectorMath", -650, 400, operation="SCALE")
         nt.links.new(U, su.inputs[0])
@@ -275,7 +275,7 @@ def build_face_group():
         f = vmath(nt, "DOT_PRODUCT", F, lp, -200, 400).outputs["Value"]
         right = vmath(nt, "CROSS_PRODUCT", F, U, -500, 200).outputs[0]
         r = vmath(nt, "DOT_PRODUCT", right, lp, -200, 200).outputs["Value"]
-    with section(nt, "UV del SDF: espejo segun el lado de la luz", "tex"):
+    with section(nt, "SDF UV: mirrored by the light side", "tex"):
         side = math(nt, "GREATER_THAN", r, 0.0, 0, 200)
         side = math(nt, "ABSOLUTE", math(nt, "SUBTRACT", side, gi.outputs["Flip Side"], 150, 250), None, 300, 250)
         uv = node(nt, "ShaderNodeUVMap", -500, -100)
@@ -290,18 +290,18 @@ def build_face_group():
         nt.links.new(u2, comb.inputs["X"])
         nt.links.new(sep.outputs["Y"], comb.inputs["Y"])
         nt.links.new(comb.outputs[0], go.inputs["SDF UV"])
-    with section(nt, "Sombra de la cara: umbral del SDF (0 = luz delante, 1 = detras)", "light"):
+    with section(nt, "Face shadow: SDF threshold (0 = light in front, 1 = behind)", "light"):
         thr = math(nt, "MULTIPLY_ADD", f, -0.5, 0, 450)
         nt.nodes[-1].inputs[2].default_value = 0.5
         lit = soft_step(nt, gi.outputs["SDF"], thr, gi.outputs["Softness"], 200, 450)
     col = toon_mix(nt, lit, gi.outputs["Base Color"], gi.outputs["Shadow Tint"], 400, 150)
-    with section(nt, "Salida (emision + transparencia)", "out", extra=(go,)):
+    with section(nt, "Output (emission + transparency)", "out", extra=(go,)):
         shader_out(nt, col, gi.outputs["Alpha"], go, 650, -300)
     arrange_sections(nt)
     return ng
 
 
-VECTOR_INPUTS = ("Sol", "Cabeza", "Cabeza frente", "Cabeza arriba")  # set on each character's modifier
+VECTOR_INPUTS = ("Sun", "Head", "Head Forward", "Head Up")  # set on each character's modifier
 
 
 def build_vectors_gn():
@@ -313,7 +313,7 @@ def build_vectors_gn():
     for n in VECTOR_INPUTS:
         sock(ng, n, "INPUT", "NodeSocketObject")
     nt = ng
-    with section(nt, "Entrada", "in"):
+    with section(nt, "Input", "in"):
         gi = node(nt, "NodeGroupInput", -800, 0)
     go = node(nt, "NodeGroupOutput", 800, 0)
 
@@ -322,15 +322,15 @@ def build_vectors_gn():
         nt.links.new(gi.outputs[name], n.inputs["Object"])
         return n
 
-    with section(nt, "Objetos: sol y empties de la cabeza (los pone el modificador)", "light"):
+    with section(nt, "Objects: sun and head empties (set by the modifier)", "light"):
         li, ho, hf, hu = (info(n, y) for n, y in zip(VECTOR_INPUTS, (300, 0, -250, -500)))
-    with section(nt, "Vectores: direccion de la luz, frente y arriba de la cabeza", "light"):
+    with section(nt, "Vectors: light direction, head forward and up", "light"):
         rot = node(nt, "FunctionNodeRotateVector", -300, 300)
         rot.inputs["Vector"].default_value = (0, 0, 1)  # sun shines along its -Z, so +Z points toward the light
         nt.links.new(li.outputs["Rotation"], rot.inputs["Rotation"])
         fwd = vmath(nt, "SUBTRACT", hf.outputs["Location"], ho.outputs["Location"], -300, -100)
         up = vmath(nt, "SUBTRACT", hu.outputs["Location"], ho.outputs["Location"], -300, -350)
-    with section(nt, "Guardar como atributos (los lee el shader)", "out", extra=(go,)):
+    with section(nt, "Store as attributes (read by the shader)", "out", extra=(go,)):
         geo = gi.outputs["Geometry"]
         for i, (name, val) in enumerate((("lightDir", rot.outputs[0]), ("headForward", fwd.outputs[0]), ("headUp", up.outputs[0]))):
             st = node(nt, "GeometryNodeStoreNamedAttribute", 0 + i * 220, 0, data_type="FLOAT_VECTOR", domain="POINT")
@@ -407,7 +407,7 @@ def normal_nodes(nt, path, groups):
         geo = node(nt, "ShaderNodeNewGeometry", -60, -150)
         for g in groups:
             nt.links.new(geo.outputs["Normal"], g.inputs["Normal"])
-        return [geo], "Normal de la geometria (sin normal map)"
+        return [geo], "Geometry normal (no normal map)"
     n_img = tex(nt, path, "Non-Color", -800, -150)
     # UE normal maps are DirectX style: flip green for Blender
     sep = node(nt, "ShaderNodeSeparateColor", -550, -150)
@@ -423,7 +423,7 @@ def normal_nodes(nt, path, groups):
     nt.links.new(comb.outputs[0], nm.inputs["Color"])
     for g in groups:
         nt.links.new(nm.outputs[0], g.inputs["Normal"])
-    return [n_img, sep, inv, comb, nm], "Normal map (DirectX a Blender: canal verde invertido)"
+    return [n_img, sep, inv, comb, nm], "Normal map (DirectX to Blender: green channel flipped)"
 
 
 def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report):
@@ -487,13 +487,13 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
         if e:
             g.inputs["Emission"].default_value = (e["R"], e["G"], e["B"], 1)
     # sections in data-flow order: textures -> computed UVs -> UV-driven textures -> shading -> output
-    frame(nt, "Textura base (color + alpha)", "tex", [base])
+    frame(nt, "Base texture (colour + alpha)", "tex", [base])
     frame(nt, normal_label, "tex", normal)
-    frame(nt, "UV calculadas (SDF / MatCap)", "light", [g_uv])
+    frame(nt, "Computed UVs (SDF / MatCap)", "light", [g_uv])
     for label, n in extra_tex:
         frame(nt, label, "tex", [n])
-    frame(nt, "Toon shading" + (" de la cara (ST Face)" if is_face else " (ST Toon)"), "color", [g])
-    frame(nt, "Salida", "out", [out])
+    frame(nt, "Toon shading" + (" for the face (ST Face)" if is_face else " (ST Toon)"), "color", [g])
+    frame(nt, "Output", "out", [out])
     arrange_sections(nt)
     translucent = props.get("BlendMode") == "BLEND_Translucent"
     mat.surface_render_method = "BLENDED" if translucent else "DITHERED"
@@ -503,12 +503,12 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
 
 # ---------- lighting panel (HSV wheels in the viewport, like Gacha Setup's Genshin panel) ----------
 PANEL = "ST Lighting Panel"  # standalone armature until the character gets a rig, then joined into it
-PICKERS = (("Luz", "st_light_pick", 0.0), ("Ambiente", "st_ambient_pick", 0.30))  # name, mesh prop, x offset (m)
+PICKERS = (("Light", "st_light_pick", 0.0), ("Ambient", "st_ambient_pick", 0.30))  # name, mesh prop, x offset (m)
 R = 0.08  # wheel radius in metres; drivers divide by it so the shader works with a unit wheel
 VALUE_MAX = 1.5  # value slider range (1 = texture colour, >1 overexposes)
 SLIDER_DX = 0.14
 SUN_DIST = 0.8  # default distance of the sun handle from the head
-COLL = "Iluminacion"
+COLL = "Lighting"
 
 
 def _mesh_obj(name, verts, faces, parent, loc, mat=None, edges=None):
@@ -604,27 +604,27 @@ def create_panel(context, near, char_arm):
 
     root = bone("ST Panel", (0, 0, 0))
     for name, _, ox in PICKERS:
-        bone(f"ST {name} centro", (ox, 0, 0), root)
+        bone(f"ST {name} Center", (ox, 0, 0), root)
         bone(f"ST {name}", (ox, 0, 0), root)
-        bone(f"ST {name} valor", (ox + SLIDER_DX, 0, 0), root)
-    bone("ST Sol", tuple(sun_at), None, 0.05)
+        bone(f"ST {name} Value", (ox + SLIDER_DX, 0, 0), root)
+    bone("ST Sun", tuple(sun_at), None, 0.05)
     bpy.ops.object.mode_set(mode="OBJECT")
     context.view_layer.objects.active = prev
     wheel_mat = _emission_mat("ST Wheel", _wheel_colour)
     ramp_mat = _emission_mat("ST Value Ramp", _ramp_colour)
     n = 64
     for name, _, ox in PICKERS:
-        disc = _mesh_obj(f"ST Rueda {name}", [(0, 0, 0)] + _circle(R, n), [(0, i + 1, (i + 1) % n + 1) for i in range(n)], pan, (ox, 0.005, 0), wheel_mat)
+        disc = _mesh_obj(f"ST Wheel {name}", [(0, 0, 0)] + _circle(R, n), [(0, i + 1, (i + 1) % n + 1) for i in range(n)], pan, (ox, 0.005, 0), wheel_mat)
         h = VALUE_MAX * R
-        track = _mesh_obj(f"ST Barra {name}", [(-0.006, 0, 0), (0.006, 0, 0), (0.006, 0, h), (-0.006, 0, h)], [(0, 1, 2, 3)], pan, (ox + SLIDER_DX, 0.005, 0), ramp_mat)
-        label = bpy.data.objects.new(f"ST Texto {name}", bpy.data.curves.new(f"ST Texto {name}", "FONT"))
+        track = _mesh_obj(f"ST Bar {name}", [(-0.006, 0, 0), (0.006, 0, 0), (0.006, 0, h), (-0.006, 0, h)], [(0, 1, 2, 3)], pan, (ox + SLIDER_DX, 0.005, 0), ramp_mat)
+        label = bpy.data.objects.new(f"ST Label {name}", bpy.data.curves.new(f"ST Label {name}", "FONT"))
         label.data.body, label.data.size, label.data.align_x = name, 0.035, "CENTER"
         label.parent, label.location, label.rotation_euler = pan, (ox + 0.03, 0.005, R + 0.04), (1.5708, 0, 0)
         label.hide_select = label.hide_render = True
         for ob in (disc, track, label):
             coll.objects.link(ob)
     for name, _, _ in PICKERS:
-        pan.pose.bones[f"ST {name} valor"].location = (0, 0, R)  # value 1 until a preset is applied
+        pan.pose.bones[f"ST {name} Value"].location = (0, 0, R)  # value 1 until a preset is applied
     return pan
 
 
@@ -651,7 +651,7 @@ def merge_panel(context, pan, rig):
     bpy.ops.object.join()
     bpy.ops.object.mode_set(mode="EDIT")
     eb = rig.data.edit_bones
-    for b in ("ST Panel", "ST Sol"):
+    for b in ("ST Panel", "ST Sun"):
         eb[b].parent = eb.get("root")
     bpy.ops.object.mode_set(mode="OBJECT")
     for name, loc in locs.items():
@@ -682,7 +682,7 @@ def bind_lighting(context, arm, char_arm, mesh):
     sun_w = _mesh_obj("WGT-ST_sun", circ + rays_out + rays_in, None, None, None,
                       edges=[(i, (i + 1) % 24) for i in range(24)] + [(24 + i, 32 + i) for i in range(8)])
     pb = arm.pose.bones
-    helpers = ("ST Panel",) + tuple(f"ST {n} centro" for n, _, _ in PICKERS)
+    helpers = ("ST Panel",) + tuple(f"ST {n} Center" for n, _, _ in PICKERS)
     for p in pb:
         if p.name.startswith("ST "):
             hidden = p.name in helpers
@@ -690,14 +690,14 @@ def bind_lighting(context, arm, char_arm, mesh):
             p.hide = hidden  # Blender 5: pose-mode visibility lives on the pose bone
             p.use_custom_shape_bone_size = False  # widgets in metres, not scaled by the 3 cm bones
     for name, prop, _ in PICKERS:
-        p, s = pb[f"ST {name}"], pb[f"ST {name} valor"]
+        p, s = pb[f"ST {name}"], pb[f"ST {name} Value"]
         for bone_ in (p, s):
             for c in list(bone_.constraints):
                 bone_.constraints.remove(c)
         p.custom_shape, p.lock_location = ring, (False, True, False)
         p.lock_rotation = p.lock_scale = (True, True, True)
         c = p.constraints.new("LIMIT_DISTANCE")
-        c.target, c.subtarget, c.limit_mode, c.distance = arm, f"ST {name} centro", "LIMITDIST_INSIDE", R
+        c.target, c.subtarget, c.limit_mode, c.distance = arm, f"ST {name} Center", "LIMITDIST_INSIDE", R
         s.custom_shape, s.lock_location = bar, (True, True, False)
         s.lock_rotation = s.lock_scale = (True, True, True)
         lim = s.constraints.new("LIMIT_LOCATION")
@@ -712,7 +712,7 @@ def bind_lighting(context, arm, char_arm, mesh):
             t.name, t.type = "var", "TRANSFORMS"
             t.targets[0].id, t.targets[0].bone_target = arm, bone
             t.targets[0].transform_type, t.targets[0].transform_space = ch, "LOCAL_SPACE"
-    sol = pb["ST Sol"]
+    sol = pb["ST Sun"]
     sol.custom_shape = sun_w
     sol.lock_rotation = sol.lock_scale = (True, True, True)
     # light shines from the sun handle towards the head; the GN modifier reads ST_Light's rotation
@@ -722,9 +722,9 @@ def bind_lighting(context, arm, char_arm, mesh):
         for c in list(sun.constraints):
             sun.constraints.remove(c)
         cl = sun.constraints.new("COPY_LOCATION")
-        cl.name, cl.target, cl.subtarget = "ST Sol", arm, "ST Sol"
+        cl.name, cl.target, cl.subtarget = "ST Sun", arm, "ST Sun"
         dt = sun.constraints.new("DAMPED_TRACK")
-        dt.name, dt.target, dt.subtarget, dt.track_axis = "ST Cabeza", char_arm, hb, "TRACK_NEGATIVE_Z"
+        dt.name, dt.target, dt.subtarget, dt.track_axis = "ST Head", char_arm, hb, "TRACK_NEGATIVE_Z"
 
 
 def _is_rig(arm):
@@ -773,9 +773,9 @@ def build_outline_gn():
         return ng
     sock(ng, "Geometry", "INPUT", "NodeSocketGeometry")
     sock(ng, "Geometry", "OUTPUT", "NodeSocketGeometry")
-    w = sock(ng, "Grosor", "INPUT", "NodeSocketFloat", OUTLINE_WIDTH)
+    w = sock(ng, "Width", "INPUT", "NodeSocketFloat", OUTLINE_WIDTH)
     w.min_value, w.max_value, w.subtype = 0.0, 0.02, "DISTANCE"
-    sock(ng, "Primer slot de contorno", "INPUT", "NodeSocketInt", 0)
+    sock(ng, "First Outline Slot", "INPUT", "NodeSocketInt", 0)
     nt = ng
     gi = node(nt, "NodeGroupInput", -1000, 0)
     go = node(nt, "NodeGroupOutput", 900, 0)
@@ -792,7 +792,7 @@ def build_outline_gn():
     nrm = node(nt, "GeometryNodeInputNormal", -600, -200)
     off = node(nt, "ShaderNodeVectorMath", -400, -200, operation="SCALE")
     nt.links.new(nrm.outputs["Normal"], off.inputs[0])
-    nt.links.new(math(nt, "MULTIPLY", gi.outputs["Grosor"], mask, -550, -350), off.inputs["Scale"])
+    nt.links.new(math(nt, "MULTIPLY", gi.outputs["Width"], mask, -550, -350), off.inputs["Scale"])
     sp = node(nt, "GeometryNodeSetPosition", -200, 100)
     nt.links.new(keep.outputs["Geometry"], sp.inputs["Geometry"])
     nt.links.new(off.outputs[0], sp.inputs["Offset"])
@@ -801,7 +801,7 @@ def build_outline_gn():
     idx = node(nt, "GeometryNodeInputMaterialIndex", 0, -150)
     smi = node(nt, "GeometryNodeSetMaterialIndex", 200, 100)
     nt.links.new(flip.outputs["Mesh"], smi.inputs["Geometry"])
-    nt.links.new(math(nt, "ADD", idx.outputs[0], gi.outputs["Primer slot de contorno"], 100, -150), smi.inputs["Material Index"])
+    nt.links.new(math(nt, "ADD", idx.outputs[0], gi.outputs["First Outline Slot"], 100, -150), smi.inputs["Material Index"])
     join = node(nt, "GeometryNodeJoinGeometry", 500, 0)
     nt.links.new(smi.outputs["Geometry"], join.inputs[0])
     nt.links.new(gi.outputs["Geometry"], join.inputs[0])
@@ -853,7 +853,7 @@ def ensure_outline(obj):
         me.materials.append(outline_material(src))
     mod = obj.modifiers.get("ST Outline") or obj.modifiers.new("ST Outline", "NODES")
     mod.node_group = build_outline_gn()
-    mod_input(mod, "Primer slot de contorno").value = len(originals)
+    mod_input(mod, "First Outline Slot").value = len(originals)
     return mod
 
 
@@ -938,39 +938,39 @@ def build_weapon_group():
     sock(ng, "Normal", "INPUT", "NodeSocketVector").hide_value = True
     sock(ng, "RMO", "INPUT", "NodeSocketColor", (0, 1, 0, 1))  # no glow, rough, no metal
     sock(ng, "MatCap", "INPUT", "NodeSocketColor", (0, 0, 0, 1))
-    sock(ng, "Brillo metal", "INPUT", "NodeSocketFloat", 0.6)
-    sock(ng, "Emision", "INPUT", "NodeSocketFloat", 0.0)  # 1 when the material has EnableEmissive
+    sock(ng, "Metal Shine", "INPUT", "NodeSocketFloat", 0.6)
+    sock(ng, "Emissive", "INPUT", "NodeSocketFloat", 0.0)  # 1 when the material has EnableEmissive
     sock(ng, "Shadow Tint", "INPUT", "NodeSocketColor", SHADOW_TINT)
     sock(ng, "Middle Value", "INPUT", "NodeSocketFloat", 0.15)
     sock(ng, "Softness", "INPUT", "NodeSocketFloat", 0.03)
     nt = ng
-    with section(nt, "Entradas", "in"):
+    with section(nt, "Inputs", "in"):
         gi = node(nt, "NodeGroupInput", -900, 0)
     go = node(nt, "NodeGroupOutput", 900, 0)
-    with section(nt, "Luz: N.L con la direccion del sol (lado iluminado)", "light"):
+    with section(nt, "Light: N.L with the sun direction (lit side)", "light"):
         L = attr(nt, "lightDir", -700, 300)
         N = vmath(nt, "NORMALIZE", gi.outputs["Normal"], None, -700, 100).outputs[0]
         ndl = vmath(nt, "DOT_PRODUCT", N, L, -400, 200).outputs["Value"]
         lit = soft_step(nt, ndl, gi.outputs["Middle Value"], gi.outputs["Softness"], -200, 200)
-    with section(nt, "UV del MatCap (normal en espacio de camara)", "tex"):
+    with section(nt, "MatCap UV (camera-space normal)", "tex"):
         vt = node(nt, "ShaderNodeVectorTransform", -400, -250, vector_type="NORMAL", convert_from="WORLD", convert_to="CAMERA")
         nt.links.new(N, vt.inputs[0])
         ma = node(nt, "ShaderNodeVectorMath", -200, -250, operation="MULTIPLY_ADD")
         nt.links.new(vt.outputs[0], ma.inputs[0])
         ma.inputs[1].default_value = ma.inputs[2].default_value = (0.5, 0.5, 0.5)
         nt.links.new(ma.outputs[0], go.inputs["MatCap UV"])
-    with section(nt, "RMO: R emision, G rugosidad, B metal", "tex"):
+    with section(nt, "RMO: R emission, G roughness, B metal", "tex"):
         rmo = node(nt, "ShaderNodeSeparateColor", -400, -450)
         nt.links.new(gi.outputs["RMO"], rmo.inputs[0])
     base = gi.outputs["Base Color"]
     col = toon_mix(nt, lit, base, gi.outputs["Shadow Tint"], 100, 100)
-    with section(nt, "Brillo del metal (matcap donde el metal es pulido) y emision", "color"):
+    with section(nt, "Metal shine (matcap where the metal is polished) and emission", "color"):
         polish = math(nt, "MULTIPLY", rmo.outputs[2], math(nt, "SUBTRACT", 1.0, rmo.outputs[1], 300, -300), 450, -300)
-        shine = math(nt, "MULTIPLY", polish, gi.outputs["Brillo metal"], 600, -300)
+        shine = math(nt, "MULTIPLY", polish, gi.outputs["Metal Shine"], 600, -300)
         col = mix_rgb(nt, "ADD", shine, col, gi.outputs["MatCap"], 650, 100)
-        glow = math(nt, "MULTIPLY", rmo.outputs[0], gi.outputs["Emision"], 600, -450)
+        glow = math(nt, "MULTIPLY", rmo.outputs[0], gi.outputs["Emissive"], 600, -450)
         col = mix_rgb(nt, "ADD", glow, col, base, 800, 100)
-    with section(nt, "Salida (emision + recorte de transparencia)", "out", extra=(go,)):
+    with section(nt, "Output (emission + alpha clip)", "out", extra=(go,)):
         clip = math(nt, "GREATER_THAN", gi.outputs["Alpha"], WEAPON_CLIP, 500, -150)
         shader_out(nt, col, clip, go, 650, -150)
     arrange_sections(nt)
@@ -1018,15 +1018,15 @@ def setup_weapon_material(mat, data, tex_idx, weapon_group, report):
         nt.links.new(n.outputs["Color"], g.inputs["MatCap"])
         used.append(os.path.basename(mc_p))
         extra.append(("MatCap del metal", n))
-    frame(nt, "Textura base (color + alpha)", "tex", [base])
+    frame(nt, "Base texture (colour + alpha)", "tex", [base])
     frame(nt, normal_label, "tex", normal)
-    frame(nt, "UV calculadas (MatCap)", "light", [g_uv])
+    frame(nt, "Computed UVs (MatCap)", "light", [g_uv])
     for label, n in extra:
         frame(nt, label, "tex", [n])
     if data.get("Switches", {}).get("EnableEmissive"):
-        g.inputs["Emision"].default_value = 1.0
-    frame(nt, "Toon de arma (ST Weapon)", "color", [g])
-    frame(nt, "Salida", "out", [out])
+        g.inputs["Emissive"].default_value = 1.0
+    frame(nt, "Weapon toon (ST Weapon)", "color", [g])
+    frame(nt, "Output", "out", [out])
     arrange_sections(nt)
     mat.surface_render_method = "BLENDED" if props.get("BlendMode") == "BLEND_Translucent" else "DITHERED"
     mat.use_backface_culling = not props.get("TwoSided", False)
@@ -1101,7 +1101,7 @@ def light_weapon(meshes, host=None):
             del m["st_weapon_host"]
         mod = m.modifiers.get("ST Light Vectors") or m.modifiers.new("ST Light Vectors", "NODES")
         mod.node_group = build_vectors_gn()
-        mod_input(mod, "Sol").value = sun
+        mod_input(mod, "Sun").value = sun
         for prop in ("st_light_pick", "st_ambient_pick"):  # light / ambient colours: the host's panel, or white
             follow = bool(host) and prop in host
             m[prop] = tuple(host[prop]) if follow else (0.0, 0.0, 1.0)

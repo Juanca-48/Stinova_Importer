@@ -15,11 +15,11 @@ from . import shading, common
 # Shape key names are pinyin + English and vary per character (biyanL, EL_mph48_biyan_L, B_close_L...).
 # Built from the 390 names in the 506 lobby models. Each name is lower-cased, its prefix (EL_, mph48_...)
 # removed, then: phonemes first, then the sections below in order, first pattern found wins; the rest
-# goes to "Cabeza y otros". Order matters: brows before mouth (base_smile_brow), pupils before eyes
+# goes to "Head & Other". Order matters: brows before mouth (base_smile_brow), pupils before eyes
 # (eyeball_big, look_up), eyes before mouth (eye_C_smile).
 PHONEMES = re.compile(r"(m_)?(pp|ff|th|dd|kk|ch|ss|nn|rr|aa|[aeiou]\d?|yi\d?|yi_?[lr]|wu\d?|ei\d?|em|sil|er|ga|ha|ju|mm|wo|xi)(_0)?")  # DD_0, SS_0 (HuiXing)
 SECTIONS = (  # (section, ((regex, meaning), ...))
-    ("Cejas", (
+    ("Brows", (
         (r"^b_", "ceja (prefijo B_: B_close, B_up...)"),
         (r"brow", "ceja (base_*_brow)"),
         (r"meimao", "ceja (眉毛)"),
@@ -30,7 +30,7 @@ SECTIONS = (  # (section, ((regex, meaning), ...))
         (r"cumei|zhoumei", "ceño fruncido (蹙眉 / 皱眉)"),
         (r"mei", "ceja (眉)"),
     )),
-    ("Pupilas", (
+    ("Pupils", (
         (r"tongkong|tk", "pupila (瞳孔, TK)"),
         (r"xitong", "pupila rasgada (细瞳)"),
         (r"eyeball", "globo ocular"),
@@ -40,7 +40,7 @@ SECTIONS = (  # (section, ((regex, meaning), ...))
         (r"^look_|^eye_(up|down|left|right|l|r)$", "mirada arriba / abajo / a un lado"),
         (r"light|hl_|[dx]gg", "brillo del ojo (高光: grande DGG, pequeño XGG)"),
     )),
-    ("Ojos", (
+    ("Eyes", (
         (r"^o_o$|^=(_[lr])?$", "ojos en blanco / cerrados en línea (o_o, =_=)"),
         (r"biyan", "cerrar el ojo (闭眼)"),
         (r"dengyan", "ojo muy abierto (瞪眼)"),
@@ -56,7 +56,7 @@ SECTIONS = (  # (section, ((regex, meaning), ...))
         (r"eye", "ojo / párpado (eye, upEye, eye_C_smile...)"),
         (r"angrywei|trguan", "mirada enojada, lágrimas (Mara; medido: mueven la zona del ojo)"),
     )),
-    ("Boca", (
+    ("Mouth", (
         (r"^m_|^mop", "boca (prefijo M_ / Mop)"),
         (r"zuijiao", "comisura de la boca (嘴角)"),
         (r"duzui", "puchero (嘟嘴)"),
@@ -68,9 +68,9 @@ SECTIONS = (  # (section, ((regex, meaning), ...))
         (r"mouth|lip|smile", "boca, labios, sonrisa"),
         (r"^ta$|^mi$", "boca de 'ta' / 'mi'"),
     )),
-)  # not listed, so "Cabeza y otros": tou (头, cabeza), gulian (鼓脸, mejillas infladas), bizi / nose (鼻子,
+)  # not listed, so "Head & Other": tou (头, cabeza), gulian (鼓脸, mejillas infladas), bizi / nose (鼻子,
 #   nariz), jaw (mandíbula), and per-character effects (faceM, Maddelena_Face_V006, MiZhui moves nothing)
-ORDER = ("Ojos", "Pupilas", "Cejas", "Boca", "Labios", "Cabeza y otros")  # Boca: opens the mouth (+ phonemes); Labios: keeps it closed
+ORDER = ("Eyes", "Pupils", "Brows", "Mouth", "Lips", "Head & Other")  # Boca: opens the mouth (+ phonemes); Labios: keeps it closed
 COLS, DX, DY = 6, 0.019, 0.039  # Gacha's slider spacing
 SECTION_GAP = 0.04
 FACE_HALF = 0.18  # keep the face clear, like Gacha: eye sections on its left, mouth ones on its right
@@ -79,8 +79,8 @@ LABEL_SCALE = 0.011
 # Ojos, Pupilas and Cejas split into: both sides on top, then right and left. Each block sits on the
 # side of the face it moves as seen from the front: *_L keys move the character's left (+X, measured),
 # which is the viewer's right, so Izquierda goes right and Derecha left.
-SIDED = ("Ojos", "Pupilas", "Cejas")
-SIDES = (("", "Ambos"), ("R", "Derecha"), ("L", "Izquierda"))
+SIDED = ("Eyes", "Pupils", "Brows")
+SIDES = (("", "Both"), ("R", "Right"), ("L", "Left"))
 SIDE_COLS = 3
 SIDE_GAP = 2 * DX  # between the Derecha and Izquierda blocks
 # one bright hue per sub-group (Blender's preset color sets include near-black ones), stepping 5/13
@@ -98,7 +98,7 @@ TICK_HALF_W = 0.0035  # guide marks at the min and max
 def face_collection(rig, name, row):
     """Bone collection inside "Face" (hiding Face hides all), with a button row in Rigify's panel."""
     face = rig.data.collections_all.get("Face") or rig.data.collections.new("Face")
-    coll = rig.data.collections_all.get(f"Cara: {name}") or rig.data.collections.new(f"Cara: {name}", parent=face)
+    coll = rig.data.collections_all.get(f"Face: {name}") or rig.data.collections.new(f"Face: {name}", parent=face)
     if hasattr(coll, "rigify_ui_row"):  # only while Rigify is enabled
         coll.rigify_ui_row, coll.rigify_ui_title = row, name
     return coll
@@ -107,8 +107,8 @@ def face_collection(rig, name, row):
 def section_of(key):
     k = re.sub(r"^(el_|eb_|mth_)?(mph\d+_)?", "", key.lower())
     if PHONEMES.fullmatch(k):
-        return "Fonemas"
-    return next((name for name, rows in SECTIONS for pat, _ in rows if re.search(pat, k)), "Cabeza y otros")
+        return "Phonemes"
+    return next((name for name, rows in SECTIONS for pat, _ in rows if re.search(pat, k)), "Head & Other")
 
 
 OPEN_MIN = 0.004  # lips this much further apart = the key opens the mouth (measured: 10-19 mm open, <3 mm not)
@@ -194,7 +194,7 @@ def section_layout(name, bones, sides):
     both = groups[""]
     if both:
         grid_w = (min(len(both), COLS) - 1) * DX
-        subs.append(("Ambos", width / 2, z))
+        subs.append(("Both", width / 2, z))
         for i, b in enumerate(both):
             pos[b] = ((width - grid_w) / 2 + (i % COLS) * DX, z - SUB_DZ - (i // COLS) * DY)
         z -= SUB_DZ + ((len(both) - 1) // COLS + 1) * DY
@@ -254,7 +254,7 @@ def slider_sides(rig, mesh, keys):
     return out
 
 
-BLINK = "CTRL-ST Parpadeo"
+BLINK = "CTRL-ST Blink"
 CLOSE_EYE = (  # keys that close one eye, by preference: biyan (闭眼: biyan_L, biyanR, mph48_biyan_L), else
     re.compile(r"(^|_)biyan_?([lr])$"),  # eye_C_smile_L (upEye_C / downEye_C family: both lids at once,
     re.compile(r"^eye_c_smile_([lr])$"),  # measured: upper lid -5 mm, lower +3 mm)
@@ -270,7 +270,7 @@ def add_blink(context, rig, mesh):
         return False
     found = [{} for _ in CLOSE_EYE]  # per pattern: side -> (slider, key)
     for b, (_, key) in keys.items():
-        if section_of(key) == "Ojos" and not side_of(key) and re.search(r"(?i)biyan|blink|close", key):
+        if section_of(key) == "Eyes" and not side_of(key) and re.search(r"(?i)biyan|blink|close", key):
             return False  # it already has a blink
         k = re.sub(r"^(el_|eb_|mth_)?(mph\d+_)?", "", key.lower())
         for pat, sides in zip(CLOSE_EYE, found):
@@ -336,12 +336,12 @@ def arrange_face(context, rig, mesh):
     groups = {}
     for bone, (i, key) in sorted(keys.items(), key=lambda kv: kv[1]):
         groups.setdefault(section_of(key), []).append(bone)
-    if groups.get("Boca"):  # split by what each key does: opens the mouth (Boca) or only moves the lips
-        opens = opening_keys(mesh, [keys[b][1] for b in groups["Boca"]])
-        groups["Labios"] = [b for b in groups["Boca"] if keys[b][1] not in opens]
-        groups["Boca"] = [b for b in groups["Boca"] if keys[b][1] in opens]
-    groups["Boca"] = groups.get("Boca", []) + groups.pop("Fonemas", [])  # phonemes join the mouth section
-    for s in ("Boca", "Labios"):
+    if groups.get("Mouth"):  # split by what each key does: opens the mouth (Boca) or only moves the lips
+        opens = opening_keys(mesh, [keys[b][1] for b in groups["Mouth"]])
+        groups["Lips"] = [b for b in groups["Mouth"] if keys[b][1] not in opens]
+        groups["Mouth"] = [b for b in groups["Mouth"] if keys[b][1] in opens]
+    groups["Mouth"] = groups.get("Mouth", []) + groups.pop("Phonemes", [])  # phonemes join the mouth section
+    for s in ("Mouth", "Lips"):
         if not groups.get(s):
             groups.pop(s, None)
     sides = slider_sides(rig, mesh, keys)
@@ -442,7 +442,7 @@ def arrange_face(context, rig, mesh):
             add_frame(side, union(rects, FRAME_PAD), face_coll)
     bpy.ops.object.mode_set(mode="OBJECT")
     for c in list(face_coll.children):  # sections that no longer exist (an older rig's Cara: Fonemas)
-        if c.name.startswith("Cara: ") and c.name[6:] in ("Fonemas",) and not c.bones:
+        if c.name.startswith(("Cara: ", "Face: ")) and c.name[6:] in ("Fonemas", "Phonemes") and not c.bones:
             rig.data.collections.remove(c)
     for names, rgb in zip(colored, SUB_COLORS):
         for n in names:
@@ -498,7 +498,7 @@ JNT_FORWARD = 0.015  # widgets in front of the skin
 
 
 def add_face_bones(rig, mesh):
-    """Facial deform joints, when the model has them, become controls in "Cara: Huesos": a small
+    """Facial deform joints, when the model has them, become controls in "Face: Bones": a small
     circle facing front (custom shape rotated out of each joint's own axes) coloured by side.
     Models without them keep only the shape key sliders."""
     weighted = {g.name for g in mesh.vertex_groups if g.name.endswith(JNT)}
@@ -507,7 +507,7 @@ def add_face_bones(rig, mesh):
     if not bones:
         return
     shape = shading._mesh_obj("WGT-ST_face_joint", shading._circle(1.0, 16), None, None, None)
-    main, inner = face_collection(rig, "Huesos", 4), face_collection(rig, "Boca interior", 4)
+    main, inner = face_collection(rig, "Bones", 4), face_collection(rig, "Inner Mouth", 4)
     inner.is_visible = False
     colors = {"Left": SUB_COLORS[0], "Right": SUB_COLORS[1]}
     for b in bones:
@@ -533,7 +533,7 @@ def add_face_bones(rig, mesh):
 
 
 # ---------- gaze ----------
-GAZE = "Mirada"
+GAZE = "Gaze"
 GAZE_DIST = 0.35  # target distance in front of the eyes (m)
 
 
@@ -576,5 +576,5 @@ def add_gaze(context, rig):
     for s in eyes:
         hidden.assign(rig.data.bones[f"MCH-{GAZE}.{s}"])
         c = rig.pose.bones[f"MCH-{GAZE}.{s}"].constraints.new("DAMPED_TRACK")
-        c.name, c.target, c.subtarget, c.track_axis = "ST Mirada", rig, f"{GAZE}.{s}", "TRACK_Y"
+        c.name, c.target, c.subtarget, c.track_axis = "ST Gaze", rig, f"{GAZE}.{s}", "TRACK_Y"
     return True

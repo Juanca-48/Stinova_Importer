@@ -2,7 +2,7 @@
 bl_info = {
     "name": "Strinova Toon Setup",
     "author": "juanc",
-    "version": (1, 1, 0),
+    "version": (1, 1, 1),
     "blender": (5, 2, 0),
     "location": "3D View > Sidebar (N) > Strinova",
     "description": "Imports Strinova characters (FModel) with toon shading, rig and constraint-based physics",
@@ -13,9 +13,9 @@ bl_info = {
 # Strinova (PaperMan) character setup, one module per concern: see the module list in INSTRUCCIONES.txt.
 if "bpy" in locals():  # add-on reload: refresh the submodules too (import_module also loads new ones)
     import importlib
-    for _n in ("common", "i18n", "shading", "face", "accessory", "rig", "paper", "importer", "weapon"):
+    for _n in ("common", "i18n", "shading", "face", "accessory", "rig", "paper", "importer", "weapon", "migrate"):
         importlib.reload(importlib.import_module(f".{_n}", __package__))
-from . import common, i18n, shading, face, accessory, rig, paper, importer, weapon
+from . import common, i18n, shading, face, accessory, rig, paper, importer, weapon, migrate
 import bpy
 
 
@@ -66,7 +66,7 @@ class STRINOVA_PT_panel(bpy.types.Panel):
             if body is None:
                 return
             if omod and omod.node_group:
-                body.prop(shading.mod_input(omod, "Grosor"), "value", text="Outline width")
+                body.prop(shading.mod_input(omod, "Width"), "value", text="Outline width")
             if arm and paper.PAPER_PROP in arm:  # animatable: keyframe it to swap in one frame
                 body.prop(arm, f'["{paper.PAPER_PROP}"]', text="Paper version", icon="FILE_IMAGE")
             if arm:
@@ -90,6 +90,7 @@ classes = importer.classes + weapon.classes + shading.classes + rig.classes + (S
 
 def register():
     bpy.app.translations.register(__name__, i18n.translations)
+    migrate.register()
     for c in classes:
         bpy.utils.register_class(c)
     bpy.types.Scene.strinova_do_shading = bpy.props.BoolProperty(
@@ -114,3 +115,4 @@ def unregister():
     for c in reversed(classes):
         bpy.utils.unregister_class(c)
     bpy.app.translations.unregister(__name__)
+    migrate.unregister()

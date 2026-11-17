@@ -7,9 +7,10 @@ toon shading, lighting, a rig with face controls, and hair and clothes physics.
 Works with both model formats: .uemodel and .fbx.
 
 Language: the panel is in English, or in Spanish when Blender's interface is
-in Spanish (Edit > Preferences > Interface > Translation). Some names the
-add-on creates inside the scene (bone collections, controls, collections) are
-in Spanish; this guide gives each one's meaning the first time it appears.
+in Spanish (Edit > Preferences > Interface > Translation). What the add-on
+creates inside the scene (bone collections, controls, collections) has English
+names. Scenes made with versions before 1.1.1, which used Spanish names, are
+renamed automatically when opened.
 Spanish guide: INSTRUCCIONES.txt.
 
 
@@ -109,11 +110,10 @@ They are also in the rig's Object Properties > Custom Properties.
   face with soft shadow (SDF), normal map and matcap.
 - Outline: inverted hull ("ST Outline" modifier). No outline on the face and
   eyes, like in the game. Color: the base texture, darkened.
-- Lighting controls (rig bone collection "Iluminacion", lighting):
-    * Wheels "Luz" (light, the lit side) and "Ambiente" (ambient, the
-      shadow): the picker's position sets hue and saturation; the bar,
-      brightness.
-    * "ST Sol" (sun): light comes from this control toward the head and moves
+- Lighting controls (rig bone collection "Lighting"):
+    * Wheels "Light" (the lit side) and "Ambient" (the shadow): the picker's
+      position sets hue and saturation; the bar, brightness.
+    * "ST Sun": light comes from this control toward the head and moves
       the shadows of the body and the face.
   They animate in the same action as the character.
 - Each character has its own sun and controls: two characters can be lit
@@ -148,26 +148,25 @@ They are also in the rig's Object Properties > Custom Properties.
 Expression controls (shape keys) are sorted into titled sections, each with
 its bone collection inside "Face":
 
-  Left of the face: Ojos (eyes), Pupilas (pupils), Cejas (brows).
-  Right: Boca (mouth), Labios (lips), Cabeza y otros (head and others).
+  Left of the face: Eyes, Pupils, Brows.
+  Right: Mouth, Lips, Head & Other.
 
-- Boca: the ones that open the mouth, and the phonemes. Labios: the ones
+- Mouth: the ones that open the mouth, and the phonemes. Lips: the ones
   that move it without opening it (smiles, corners, teeth, tongue). They are
   told apart by measuring the model's geometry when the rig is generated.
-- Ojos, Pupilas and Cejas are split into "Ambos" (both), "Derecha" (right)
-  and "Izquierda" (left). Facing the character, each block sits on the side
+- Eyes, Pupils and Brows are split into "Both", "Right" and "Left".
+  Facing the character, each block sits on the side
   of the face it moves.
 - Each control is a small bar that slides up (0 at the bottom, 1 at the top)
   along a guide marking the minimum and maximum.
 - Blink: if the model closes each eye with its own control, "CTRL-ST
-  Parpadeo" (blink) is added to the "Ambos" block of Ojos, closing both at
-  once. Winks still work.
-- Gaze: "Mirada" control in front of the face, with a target per eye
-  (Mirada.L / Mirada.R).
+  Blink" is added to the "Both" block of Eyes, closing both at once. Winks
+  still work.
+- Gaze: "Gaze" control in front of the face, with a target per eye
+  (Gaze.L / Gaze.R).
 - Face bones: Fragrans, Yugiri and Mara (and the eyelids of Chiyo's match
-  model) have bones in the face. They show as circles in the "Cara: Huesos"
-  (face: bones) collection. Teeth and tongue go in "Cara: Boca interior"
-  (face: inner mouth), hidden on import.
+  model) have bones in the face. They show as circles in the "Face: Bones"
+  collection. Teeth and tongue go in "Face: Inner Mouth", hidden on import.
 
 
 8. PAPER VERSION
@@ -191,7 +190,7 @@ character painted on it.
 9. ACCESSORIES (MASKS, HATS)
 ----------------------------
 
-Each accessory has a bone in the "Accesorios" (accessories) collection (a
+Each accessory has a bone in the "Accessories" collection (a
 small mask drawn in front of the piece). It's a child of the head: it follows
 the character, but can be moved, rotated or scaled to 0. It also has a
 "Show <accessory>" switch in the panel that hides it, with its outline, in
@@ -199,7 +198,7 @@ the viewport and the render.
 
 - Masks with their own bone (Fragrans, Kanami S211-S215, MoBai S206-S210,
   Eika S111): the control is created automatically.
-- Eika's masks (S001, S101, S103, S106, S107...): the "ACC-Mascara" control
+- Eika's masks (S001, S101, S103, S106, S107...): the "ACC-Mask" control
   is created automatically.
 - Other accessories (most hats) share the head's or the hair's weights and
   have no bone of their own: they move with them.
@@ -221,8 +220,8 @@ panel's "Weapons" section. Importing a character never brings its weapon.
   comes in or only the body.
 - If you pick any other piece (a sight, a pendant, a loose lobby version),
   only that piece is imported.
-- Accepts .uemodel and .fbx. Each weapon goes into its own "Arma <name>"
-  (weapon) collection and doesn't touch the characters in the scene.
+- Accepts .uemodel and .fbx. Each weapon goes into its own "Weapon <name>"
+  collection and doesn't touch the characters in the scene.
 - With "Apply Toon Shading" checked, the weapon gets the add-on's toon: the
   same light and shadow as the characters, a matcap shine where the weapon
   is polished metal, and its outline. Sight lenses become translucent glass.
@@ -233,7 +232,7 @@ panel's "Weapons" section. Importing a character never brings its weapon.
 - Textures are looked up in FModel's SkinAssets folder: next to the model
   if it comes from FModel, or from the panel's "Character folder" if it's an
   .fbx.
-- Weapon controls ("Arma" bone collection):
+- Weapon controls ("Weapon" bone collection):
     * Yellow frame (Root): moves and rotates the whole weapon.
     * Light blue circles: the moving parts, like the magazine (Magazine),
       bolt (Pull), suppressor (Suppressor), foregrip (Foregrip) or the
@@ -259,7 +258,7 @@ panel's "Weapons" section. Importing a character never brings its weapon.
   To adjust the grip use the weapon's Root control (yellow frame), don't
   move the weapon object: while connected, moving the object adds to the
   grip and pulls it out of the hand.
-- Left hand: every weapon has the green "Agarre" (grip) control, a ring under
+- Left hand: every weapon has the green "ST Grip" control, a ring under
   the barrel that slides along the weapon (only in that direction, along the
   green guide marking its travel) and sticks to the underside of the weapon.
   With the weapon connected and selected, "Connect left hand" switches the
@@ -298,5 +297,6 @@ Modules (strinova_toon folder):
   common.py     Shared helpers.
   i18n.py       Spanish translation of the interface. UI text is written in
                 English; a new UI string needs its line here.
+  migrate.py    Renames what older versions created with Spanish names.
   materials.json  Data for every character material.
   __init__.py   Panel and registration.

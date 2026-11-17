@@ -6,7 +6,7 @@ from mathutils import Vector
 from . import shading, common
 from .common import iface_, tip_, rpt_
 
-COLL = "Accesorios"
+COLL = "Accessories"
 PREFIX = "ACC-"
 OWN_BONE = re.compile(r"(?i)mask")  # accessory bones found in Strinova skeletons
 COLOR = (1.0, 0.75, 0.1)
@@ -62,17 +62,17 @@ def world_points(mesh, idx):
 
 
 SHOW = "st_show_"  # rig property per accessory (st_show_<bone>): off hides the piece
-HIDE = "ST Ocultar grupo"
+HIDE = "ST Hide Group"
 
 
 def hide_group_nodes():
-    """Geometry Nodes group deleting the vertices of the vertex group named in its "Grupo" input."""
+    """Geometry Nodes group deleting the vertices of the vertex group named in its "Group" input."""
     ng = bpy.data.node_groups.get(HIDE)
     if ng:
         return ng
     ng = bpy.data.node_groups.new(HIDE, "GeometryNodeTree")
     ng.interface.new_socket("Geometry", in_out="INPUT", socket_type="NodeSocketGeometry")
-    ng.interface.new_socket("Grupo", in_out="INPUT", socket_type="NodeSocketString")
+    ng.interface.new_socket("Group", in_out="INPUT", socket_type="NodeSocketString")
     ng.interface.new_socket("Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry")
     n = ng.nodes
     gi, go = n.new("NodeGroupInput"), n.new("NodeGroupOutput")
@@ -84,7 +84,7 @@ def hide_group_nodes():
     dl = n.new("GeometryNodeDeleteGeometry")
     for i, node in enumerate((gi, attr, cmp, dl, go)):
         node.location = (i * 220 - 440, 0)
-    ng.links.new(gi.outputs["Grupo"], attr.inputs["Name"])
+    ng.links.new(gi.outputs["Group"], attr.inputs["Name"])
     ng.links.new(attr.outputs["Attribute"], cmp.inputs["A"])
     ng.links.new(cmp.outputs["Result"], dl.inputs["Selection"])
     ng.links.new(gi.outputs["Geometry"], dl.inputs["Geometry"])
@@ -95,12 +95,12 @@ def hide_group_nodes():
 def add_toggle(rig, mesh, bone, idx):
     """rig["st_show_<bone>"]: off hides the piece (viewport and render). A modifier right after the
     armature deletes its vertex group, so the outline built from the mesh goes too."""
-    prop, vg_name, mod_name = SHOW + bone, f"ST {bone}", f"ST Ocultar {bone}"
+    prop, vg_name, mod_name = SHOW + bone, f"ST {bone}", f"ST Hide {bone}"
     vg = mesh.vertex_groups.get(vg_name) or mesh.vertex_groups.new(name=vg_name)
     vg.add(idx, 1.0, "REPLACE")
     mod = mesh.modifiers.get(mod_name) or mesh.modifiers.new(mod_name, "NODES")
     mod.node_group = hide_group_nodes()
-    shading.mod_input(mod, "Grupo").value = vg_name
+    shading.mod_input(mod, "Group").value = vg_name
     arm_i = next((i for i, m in enumerate(mesh.modifiers) if m.type == "ARMATURE"), -1)
     mesh.modifiers.move(mesh.modifiers.find(mod_name), arm_i + 1)
     common.drive_modifier(mod, rig, prop, "1 - v", True, tip_("Shows or hides {} (animatable)").format(bone))  # on = hidden
@@ -122,10 +122,10 @@ HEADGEAR = {"Aika": "hair_tt"}  # character -> bones of its headgear ("tou tao")
 
 
 def add_headgear(context, rig, mesh):
-    """Eika's masks hang from hair_tt_* bones. Give them a parent bone, ACC-Mascara (child of the
+    """Eika's masks hang from hair_tt_* bones. Give them a parent bone, ACC-Mask (child of the
     head), plus a show toggle. Weights stay as they are, so a chain with physics keeps it."""
     prefix = next((p for c, p in HEADGEAR.items() if c in mesh.name or c in rig.name), None)
-    name = PREFIX + "Mascara"
+    name = PREFIX + "Mask"
     if not prefix or name in rig.data.bones:
         return False
     idx = piece(mesh, lambda n: n.startswith(prefix))
