@@ -2,7 +2,7 @@
 bl_info = {
     "name": "Strinova Toon Setup",
     "author": "juanc",
-    "version": (1, 0, 1),
+    "version": (1, 1, 0),
     "blender": (5, 2, 0),
     "location": "3D View > Sidebar (N) > Strinova",
     "description": "Imports Strinova characters (FModel) with toon shading, rig and constraint-based physics",
