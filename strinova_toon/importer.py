@@ -3,6 +3,7 @@ shading and rig operators (called through bpy.ops, so this module does not depen
 import bpy, os, re, glob
 from bpy_extras.io_utils import ImportHelper
 from . import paper
+from .common import iface_, tip_, rpt_
 
 
 def char_dir_from(path, current=""):
@@ -109,17 +110,17 @@ def gather_leftovers(context, coll, before_objs, before_colls):
 
 class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
     bl_idname = "strinova.import_character"
-    bl_label = "Importar personaje"
-    bl_description = ("Importa un .uemodel (UEFormat) o .fbx del personaje y opcionalmente aplica shading y rig. "
-                      "Con una carpeta de skin (sin elegir archivo) importa su modelo 3D y su version de papel")
+    bl_label = "Import character"
+    bl_description = ("Imports a character .uemodel (UEFormat) or .fbx and optionally applies shading and rig. "
+                      "With a skin folder (no file picked) it imports its 3D model and its paper version")
     bl_options = {"REGISTER", "UNDO"}
 
     filter_glob: bpy.props.StringProperty(default="*.uemodel;*.fbx", options={"HIDDEN"})
     # the file browser fills it with the folder it shows: used when no file is picked
     directory: bpy.props.StringProperty(subtype="DIR_PATH", options={"HIDDEN", "SKIP_SAVE"})
-    do_shading: bpy.props.BoolProperty(name="Aplicar Toon Shading", default=True)
-    do_rig: bpy.props.BoolProperty(name="Generar rig", default=True)
-    do_paper: bpy.props.BoolProperty(name="Incluir version de papel", default=False)
+    do_shading: bpy.props.BoolProperty(name="Apply Toon Shading", default=True)
+    do_rig: bpy.props.BoolProperty(name="Generate rig", default=True)
+    do_paper: bpy.props.BoolProperty(name="Include paper version", default=False)
     # the paper version's second import: the exact collection of the 3D import it joins (by name a
     # repeated skin would find the first copy, "Name" vs "Name.001")
     collection: bpy.props.StringProperty(options={"HIDDEN", "SKIP_SAVE"})
@@ -136,22 +137,22 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
             folder = next((d for d in (self.filepath, self.directory, os.path.dirname(self.filepath)) if d and os.path.isdir(d)), None)
             print(f"[Strinova] sin archivo: filepath={self.filepath!r} directory={self.directory!r} -> {folder!r}")
             if not folder:
-                self.report({"ERROR"}, f"No existe: {self.filepath}")
+                self.report({"ERROR"}, rpt_("Not found: {}").format(self.filepath))
                 return {"CANCELLED"}
             self.filepath = folder
         if os.path.isdir(self.filepath):  # a skin folder: its 3D model (lobby first) and its paper version
             model, paper_model = models_in(self.filepath)
             if not (model or paper_model):
-                self.report({"ERROR"}, "La carpeta no tiene Mesh3D ni Mesh2D con un .fbx o .uemodel")
+                self.report({"ERROR"}, rpt_("The folder has no Mesh3D or Mesh2D with an .fbx or .uemodel"))
                 return {"CANCELLED"}
             self.filepath, self.do_paper = model or paper_model, bool(model and paper_model)
         ext = os.path.splitext(self.filepath)[1].lower()
         # hasattr(bpy.ops.uf, ...) is always True, so check the registered operator type instead
         if ext == ".uemodel" and not hasattr(bpy.types, "UF_OT_import_uemodel"):
-            self.report({"ERROR"}, "UEFormat no esta activo: activalo o importa el personaje como .fbx")
+            self.report({"ERROR"}, rpt_("UEFormat is not enabled: enable it or import the character as .fbx"))
             return {"CANCELLED"}
         if ext not in (".uemodel", ".fbx"):
-            self.report({"ERROR"}, "Formato no soportado, usa .uemodel o .fbx")
+            self.report({"ERROR"}, rpt_("Unsupported format, use .uemodel or .fbx"))
             return {"CANCELLED"}
         if context.mode != "OBJECT":
             bpy.ops.object.mode_set(mode="OBJECT")
@@ -191,7 +192,7 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
                 bpy.ops.strinova.import_character(filepath=pp, do_shading=self.do_shading, do_rig=False, do_paper=False,
                                                   collection=coll.name)
             else:
-                self.report({"WARNING"}, f"{name}: esta skin no trae version de papel (Mesh2D)")
+                self.report({"WARNING"}, rpt_("{}: this skin has no paper version (Mesh2D)").format(name))
         return result
 
     def _import(self, context, ext, char_dir, coll, before, host=None):
@@ -203,7 +204,7 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
             bpy.ops.uf.import_uemodel(filepath=self.filepath, directory=d, files=[{"name": f}])
         mesh = next((o for o in bpy.data.objects if o not in before and o.type == "MESH" and o.find_armature()), None)
         if not mesh:
-            self.report({"ERROR"}, "El archivo no trae una malla con esqueleto")
+            self.report({"ERROR"}, rpt_("The file has no mesh with a skeleton"))
             return {"CANCELLED"}
         if char_dir:
             context.scene.strinova_char_dir = char_dir
@@ -214,11 +215,11 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
             o.select_set(False)
         context.view_layer.objects.active = mesh
         mesh.select_set(True)
-        done, failed = ["importado"], []
+        done, failed = [rpt_("imported")], []
         do_rig = self.do_rig
         if host:  # before the shading, so it reuses the host's sun, head empties and lighting panel
             unmapped = paper.attach(context, mesh, host)
-            done.append(f"papel en {host.find_armature().name}")
+            done.append(rpt_("paper on {}").format(host.find_armature().name))
             do_rig = False
             if unmapped:
                 print(f"[Strinova] papel: grupos sin hueso en el rig: {unmapped}")
@@ -238,7 +239,7 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
                 failed.append(name)
         if host:
             paper.ensure_switch(host.find_armature())
-        msg = f"{mesh.name}: " + ", ".join(done) + (f" | fallo: {', '.join(failed)} (ver consola)" if failed else "")
+        msg = f"{mesh.name}: " + ", ".join(done) + (rpt_(" | failed: {} (see console)").format(", ".join(failed)) if failed else "")
         self.report({"WARNING" if failed else "INFO"}, msg)
         return {"FINISHED"}
 

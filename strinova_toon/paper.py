@@ -7,6 +7,7 @@ rig's "st_paper" property does the same (keyframe it: a bool keys with constant 
 """
 import bpy, os, re
 from . import common
+from .common import iface_, tip_, rpt_
 from mathutils import Vector
 
 PAPER_PROP = "st_paper"
@@ -121,7 +122,7 @@ def ensure_switch(rig):
         mod.node_group = hide_group()
         o.modifiers.move(o.modifiers.find(HIDE), len(o.modifiers) - 1)  # last: hides the outline too
         common.drive_modifier(mod, rig, PAPER_PROP, "1 - v" if o.get(PAPER_PROP) else "v", False,
-                              "Muestra la version de papel en lugar del modelo 3D")
+                              tip_("Shows the paper version instead of the 3D model"))
 
 
 def find_host(coll):

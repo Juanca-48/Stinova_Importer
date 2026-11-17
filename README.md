@@ -1,42 +1,44 @@
 # Strinova Toon Setup
 
-Add-on de Blender que importa personajes de **Strinova** y los deja listos para animar y renderizar con un solo botón.
+**English** · [Español](README.es.md)
 
-Funciona con los dos formatos de modelo: **`.uemodel`** y **`.fbx`**, vengan de donde vengan.
+Blender add-on that imports **Strinova** characters and gets them ready to animate and render with a single button.
 
-## Qué hace
+It works with both model formats, **`.uemodel`** and **`.fbx`**, wherever they come from.
 
-- **Importa** `.uemodel` y `.fbx`, o la carpeta entera de una skin: trae el modelo 3D y su versión de papel juntos.
-- **Toon shading** como en el juego: materiales reconstruidos desde las texturas, sombra de cara suave y contorno.
-- **Iluminación por personaje**: un sol que se mueve con un control y dos ruedas de color (luz y sombra) dentro del rig, todo animable.
-- **Rig completo** con [Gacha Setup](https://github.com/PaoloESAN/gacha-setup) y física de pelo, ropa y pecho que se activa con una casilla.
-- **Cara ordenada**: los controles de expresión agrupados en Ojos, Pupilas, Cejas, Boca, Labios y Cabeza, con colores, control de mirada y parpadeo.
-- **Versión de papel**: cambia entre el modelo 3D y el de papel en un fotograma, como en el juego.
-- **Accesorios**: máscaras y sombreros con su propio hueso y un interruptor para mostrarlos u ocultarlos.
-- **Varios personajes** en la misma escena, cada uno con su propia luz.
-- **Armas** con su propio botón: cuerpo, mira, colgante y cargador montados, con su shading, y un botón para ponerlas en la mano del personaje.
+## What it does
 
-## Necesitas
+- **Imports** `.uemodel` and `.fbx`, or a skin's whole folder: brings in the 3D model and its paper version together.
+- **Toon shading** like in the game: materials rebuilt from the textures, smooth face shadows and outlines.
+- **Per-character lighting**: a sun moved with a control and two color wheels (light and shadow) inside the rig, all animatable.
+- **Full rig** with [Gacha Setup](https://github.com/PaoloESAN/gacha-setup), plus hair, clothes and chest physics you turn on with a checkbox.
+- **Tidy face**: expression controls grouped into Eyes, Pupils, Brows, Mouth, Lips and Head, with colors, a look-at control and blinking.
+- **Paper version**: switch between the 3D model and the paper one in a single frame, like in the game.
+- **Accessories**: masks and hats with their own bone and a switch to show or hide them.
+- **Several characters** in the same scene, each with its own light.
+- **Weapons** with their own button: body, sight, pendant and magazine assembled, with their shading, and a button to put them in the character's hand.
+
+## Requirements
 
 | | |
 |---|---|
 | **Blender 5.2** | |
-| **[Gacha Setup](https://github.com/PaoloESAN/gacha-setup/releases)** | Obligatorio para el rig: este add-on usa su rigger. |
-| **[UEFormat](https://github.com/h4lfheart/UEFormat)** | Solo para importar `.uemodel` (con `.fbx` no hace falta). |
+| **[Gacha Setup](https://github.com/PaoloESAN/gacha-setup/releases)** | Required for the rig: this add-on uses its rigger. |
+| **[UEFormat](https://github.com/h4lfheart/UEFormat)** | Only for importing `.uemodel` (not needed for `.fbx`). |
 
-## Descarga e instalación
+## Download and installation
 
-1. Instala **[Gacha Setup](https://github.com/PaoloESAN/gacha-setup/releases)** y, si vas a usar `.uemodel`, **[UEFormat](https://github.com/h4lfheart/UEFormat)**, siguiendo las instrucciones de cada uno.
-2. Descarga `strinova_toon-vX.Y.Z.zip` de la última versión en **[Releases](https://github.com/Juanca-48/Stinova_Importer/releases/latest)**. No lo descomprimas.
-3. En Blender: *Edit > Preferences > Add-ons > Install from Disk* y elige ese zip.
-4. Activa **Strinova Toon Setup** y comprueba que **Gacha Setup** y **Rigify** (incluido en Blender) también estén activos.
+1. Install **[Gacha Setup](https://github.com/PaoloESAN/gacha-setup/releases)** and, if you'll use `.uemodel`, **[UEFormat](https://github.com/h4lfheart/UEFormat)**, following each one's instructions.
+2. Download `strinova_toon-vX.Y.Z.zip` from the latest version in **[Releases](https://github.com/Juanca-48/Stinova_Importer/releases/latest)**. Don't unzip it.
+3. In Blender: *Edit > Preferences > Add-ons > Install from Disk* and pick that zip.
+4. Enable **Strinova Toon Setup** and check that **Gacha Setup** and **Rigify** (bundled with Blender) are enabled too.
 
-Para actualizar, instala el zip de la versión nueva de la misma forma y reinicia Blender.
+To update, install the new version's zip the same way and restart Blender.
 
-El panel aparece en el viewport 3D, pestaña **Strinova** (tecla N).
+The panel is in the 3D viewport, **Strinova** tab (N key). It's in English, or in Spanish when Blender's interface is.
 
-La guía de uso completa, con todas las opciones, está en [INSTRUCCIONES.txt](INSTRUCCIONES.txt).
+The full user guide, with every option, is in [INSTRUCTIONS.txt](INSTRUCTIONS.txt).
 
-## Licencia
+## License
 
-[GPL-3.0-or-later](LICENSE), la misma que Blender y que [Gacha Setup](https://github.com/PaoloESAN/gacha-setup), cuyo rigger usa este add-on para generar el rig.
+[GPL-3.0-or-later](LICENSE), the same as Blender and [Gacha Setup](https://github.com/PaoloESAN/gacha-setup), whose rigger this add-on uses to build the rig.

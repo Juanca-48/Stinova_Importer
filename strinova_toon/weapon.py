@@ -15,6 +15,7 @@ from mathutils import Matrix, Vector, Quaternion
 from bpy_extras.io_utils import ImportHelper
 from bpy_extras import view3d_utils
 from . import importer, shading, common
+from .common import iface_, tip_, rpt_
 
 PIECE_BONE = {"sight": "Sight", "pendant": "Pendant", "magazine": "Magazine"}  # piece kind -> socket bone on the body
 
@@ -359,7 +360,7 @@ def connect(context, arm, rig):
     disconnect(arm)
     if GRIP_PROP not in arm:
         arm[GRIP_PROP] = True
-        arm.id_properties_ui(GRIP_PROP).update(description="El arma sigue la mano derecha del personaje (gatillo)")
+        arm.id_properties_ui(GRIP_PROP).update(description=tip_("The weapon follows the character's right hand (trigger)"))
     if OLD_SUPPORT_PROP in arm:
         del arm[OLD_SUPPORT_PROP]
     arm.update_tag()
@@ -477,7 +478,7 @@ def connect_left(context, arm, rig):
         pb.constraints.remove(old)
     if LEFT_PROP not in arm:
         arm[LEFT_PROP] = True
-        arm.id_properties_ui(LEFT_PROP).update(description="La mano izquierda del personaje va al agarre del arma")
+        arm.id_properties_ui(LEFT_PROP).update(description=tip_("The character's left hand goes to the weapon's grip"))
         arm.update_tag()
     if LEFT_ARM in rig.pose.bones and "IK_FK" in rig.pose.bones[LEFT_ARM]:
         rig.pose.bones[LEFT_ARM]["IK_FK"] = 0.0
@@ -509,9 +510,9 @@ def connect_left(context, arm, rig):
 
 class STRINOVA_OT_weapon_left_hand(bpy.types.Operator):
     bl_idname = "strinova.weapon_left_hand"
-    bl_label = "Conectar mano izquierda"
-    bl_description = ("Pone la mano izquierda del personaje en el agarre del arma (control verde que se desliza a lo "
-                      "largo del cañón). El control de la mano sigue sirviendo para ajustar cómo la apoya")
+    bl_label = "Connect left hand"
+    bl_description = ("Puts the character's left hand on the weapon's grip (a green control that slides along "
+                      "the barrel). The hand control still adjusts how it rests")
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -525,21 +526,21 @@ class STRINOVA_OT_weapon_left_hand(bpy.types.Operator):
         if context.mode != "OBJECT":
             bpy.ops.object.mode_set(mode="OBJECT")
         if not connect_left(context, arm, rig):
-            self.report({"ERROR"}, "No se pudo crear el agarre en esta arma")
+            self.report({"ERROR"}, rpt_("Could not create the grip on this weapon"))
             return {"CANCELLED"}
         for o in context.view_layer.objects:
             o.select_set(False)
         context.view_layer.objects.active = arm
         arm.select_set(True)
-        self.report({"INFO"}, f"Mano izquierda de {rig.name} en el agarre de {arm.name}")
+        self.report({"INFO"}, rpt_("Left hand of {} on the grip of {}").format(rig.name, arm.name))
         return {"FINISHED"}
 
 
 class STRINOVA_OT_weapon_hand(bpy.types.Operator):
     bl_idname = "strinova.weapon_hand"
-    bl_label = "Conectar arma"
-    bl_description = ("Con el arma seleccionada: haz clic en un personaje en el viewport y el arma va a su mano "
-                      "derecha (gatillo). Esc o clic derecho cancela")
+    bl_label = "Connect weapon"
+    bl_description = ("With the weapon selected: click a character in the viewport and the weapon goes to its "
+                      "right hand (trigger). Esc or right click cancels")
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -554,7 +555,8 @@ class STRINOVA_OT_weapon_hand(bpy.types.Operator):
             o.select_set(False)
         context.view_layer.objects.active = arm
         arm.select_set(True)
-        self.report({"INFO"}, f"{arm.name} en la mano de {rig.name}" + (f", con la luz de {host.name}" if host else ""))
+        self.report({"INFO"}, rpt_("{} in the hand of {}").format(arm.name, rig.name)
+                    + (rpt_(", lit by {}").format(host.name) if host else ""))
         return {"FINISHED"}
 
     def execute(self, context):  # scripts: the weapon and the character selected
@@ -562,14 +564,14 @@ class STRINOVA_OT_weapon_hand(bpy.types.Operator):
         arm = next((weapon_rig(o) for o in sel if o and weapon_rig(o)), None)
         rig = next((character_rig(o) for o in sel if o and not weapon_rig(o) and character_rig(o)), None)
         if not arm or not rig:
-            self.report({"ERROR"}, "Selecciona el arma y el personaje (su rig o su malla) a la vez")
+            self.report({"ERROR"}, rpt_("Select the weapon and the character (its rig or its mesh) together"))
             return {"CANCELLED"}
         return self.finish(context, arm, rig)
 
     def invoke(self, context, event):
         self.arm = weapon_rig(context.active_object)
         context.window.cursor_modal_set("EYEDROPPER")
-        context.workspace.status_text_set("Haz clic en el personaje que sostendra el arma  |  Esc / clic derecho: cancelar")
+        context.workspace.status_text_set(iface_("Click the character that will hold the weapon  |  Esc / right click: cancel"))
         context.window_manager.modal_handler_add(self)
         return {"RUNNING_MODAL"}
 
@@ -608,7 +610,7 @@ class STRINOVA_OT_weapon_hand(bpy.types.Operator):
         if event.type == "LEFTMOUSE" and event.value == "PRESS":
             rig = self.pick(context, event)
             if not rig:
-                self.report({"WARNING"}, "Ahi no hay un personaje con rig: haz clic sobre su malla")
+                self.report({"WARNING"}, rpt_("No rigged character there: click on its mesh"))
                 return {"RUNNING_MODAL"}
             self.end(context)
             return self.finish(context, self.arm, rig)
@@ -617,8 +619,8 @@ class STRINOVA_OT_weapon_hand(bpy.types.Operator):
 
 class STRINOVA_OT_weapon_release(bpy.types.Operator):
     bl_idname = "strinova.weapon_release"
-    bl_label = "Desconectar arma"
-    bl_description = "Suelta el arma de las manos del personaje: vuelve a donde estaba antes de conectarla"
+    bl_label = "Disconnect weapon"
+    bl_description = "Releases the weapon from the character's hands: it goes back to where it was before connecting"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -630,21 +632,21 @@ class STRINOVA_OT_weapon_release(bpy.types.Operator):
         arm = weapon_rig(context.active_object)
         rig = connected(arm)
         disconnect(arm)
-        self.report({"INFO"}, f"{arm.name} fuera de la mano de {rig.name}")
+        self.report({"INFO"}, rpt_("{} out of the hand of {}").format(arm.name, rig.name))
         return {"FINISHED"}
 
 
 class STRINOVA_OT_import_weapon(bpy.types.Operator, ImportHelper):
     bl_idname = "strinova.import_weapon"
-    bl_label = "Importar arma"
-    bl_description = ("Importa un arma (.uemodel o .fbx) en su propia coleccion. Con el cuerpo del arma o la carpeta "
-                      "de la skin, trae tambien su mira y su colgante y los coloca en su sitio")
+    bl_label = "Import weapon"
+    bl_description = ("Imports a weapon (.uemodel or .fbx) into its own collection. With the weapon's body or the "
+                      "skin folder, it also brings its sight and pendant and puts them in place")
     bl_options = {"REGISTER", "UNDO"}
 
     filter_glob: bpy.props.StringProperty(default="*.uemodel;*.fbx", options={"HIDDEN"})
     directory: bpy.props.StringProperty(subtype="DIR_PATH", options={"HIDDEN", "SKIP_SAVE"})
-    sight: bpy.props.BoolProperty(name="Incluir mira", default=True,
-                                  description="Trae la mira del arma y la coloca en su sitio; sin ella, solo el cuerpo")
+    sight: bpy.props.BoolProperty(name="Include sight", default=True,
+                                  description="Brings the weapon's sight and puts it in place; without it, only the body")
 
     def execute(self, context):
         path = self.filepath
@@ -652,15 +654,15 @@ class STRINOVA_OT_import_weapon(bpy.types.Operator, ImportHelper):
             path = next((d for d in (path, self.directory, os.path.dirname(path)) if d and os.path.isdir(d)), "")
         files = assembly(path, self.sight) if path else []
         if not files:
-            self.report({"ERROR"}, "Elige el arma (.uemodel o .fbx) o la carpeta de una de sus skins")
+            self.report({"ERROR"}, rpt_("Pick the weapon (.uemodel or .fbx) or the folder of one of its skins"))
             return {"CANCELLED"}
         # a character (its 3D and paper models live in Mesh3D* / Mesh2D) picked here by mistake: as a
         # weapon it got weapon shading and showed only its outline
         if any(re.match(r"mesh[23]d", part, re.I) for f in files for part in os.path.normpath(f).split(os.sep)):
-            self.report({"ERROR"}, "Eso es un personaje, no un arma: usa Importar personaje")
+            self.report({"ERROR"}, rpt_("That is a character, not a weapon: use Import character"))
             return {"CANCELLED"}
         if any(f.lower().endswith(".uemodel") for f in files) and not hasattr(bpy.types, "UF_OT_import_uemodel"):
-            self.report({"ERROR"}, "UEFormat no esta activo: activalo o importa el arma como .fbx")
+            self.report({"ERROR"}, rpt_("UEFormat is not enabled: enable it or import the weapon as .fbx"))
             return {"CANCELLED"}
         # light the weapon like the selected character (its sun and colours), else with its own sun
         host = common.target_mesh(context)
@@ -700,7 +702,7 @@ class STRINOVA_OT_import_weapon(bpy.types.Operator, ImportHelper):
         new = [o for o in bpy.data.objects if o not in before and not o.name.startswith("WGT-")]  # not the control shapes
         if not new:
             bpy.data.collections.remove(coll)
-            self.report({"ERROR"}, "El archivo no trae ningun modelo")
+            self.report({"ERROR"}, rpt_("The file has no model"))
             return {"CANCELLED"}
         for o in vl.objects:
             o.select_set(False)
@@ -713,14 +715,14 @@ class STRINOVA_OT_import_weapon(bpy.types.Operator, ImportHelper):
                 for k, v in report.items():
                     print(f"[Strinova] {k}: {v}")
                 done = sum(isinstance(v, dict) for v in report.values())
-                shaded = f", {done}/{len(report)} materiales" + (f" con la luz de {host.name}" if host else "")
+                shaded = rpt_(", {}/{} materials").format(done, len(report)) + (rpt_(", lit by {}").format(host.name) if host else "")
             else:
-                shaded = ", sin shading: no encuentro la carpeta SkinAssets de FModel (revisa la carpeta del personaje)"
+                shaded = rpt_(", no shading: FModel's SkinAssets folder not found (check the character folder)")
         for o in meshes:
             o.select_set(True)
         vl.objects.active = meshes[0] if meshes else new[0]
-        extra = f", con {' y '.join({'sight': 'mira', 'pendant': 'colgante', 'magazine': 'cargador'}[k] for k in hung)}" if hung else ""
-        self.report({"INFO"}, f"{coll.name}: {len(meshes)} malla(s){extra}, {controls} controles{shaded}")
+        extra = rpt_(", with {}").format(rpt_(" and ").join(rpt_(k) for k in hung)) if hung else ""
+        self.report({"INFO"}, rpt_("{}: {} mesh(es){}, {} controls{}").format(coll.name, len(meshes), extra, controls, shaded))
         return {"FINISHED"}
 
 

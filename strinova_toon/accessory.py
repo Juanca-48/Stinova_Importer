@@ -5,6 +5,7 @@ and the operator gives it its own bone, weighting it rigidly to that bone."""
 import bpy, re
 from mathutils import Vector
 from . import shading, common
+from .common import iface_, tip_, rpt_
 
 COLL = "Accesorios"
 PREFIX = "ACC-"
@@ -112,7 +113,7 @@ def add_toggle(rig, mesh, bone, idx):
     shading.mod_input(mod, "Grupo").value = vg_name
     arm_i = next((i for i, m in enumerate(mesh.modifiers) if m.type == "ARMATURE"), -1)
     mesh.modifiers.move(mesh.modifiers.find(mod_name), arm_i + 1)
-    common.drive_modifier(mod, rig, prop, "1 - v", True, f"Muestra u oculta {bone} (se puede animar)")  # on = hidden
+    common.drive_modifier(mod, rig, prop, "1 - v", True, tip_("Shows or hides {} (animatable)").format(bone))  # on = hidden
 
 
 def add_existing(rig, mesh):
@@ -164,12 +165,12 @@ def add_headgear(context, rig, mesh):
 
 class STRINOVA_OT_accessory(bpy.types.Operator):
     bl_idname = "strinova.accessory_bone"
-    bl_label = "Crear hueso de accesorio"
-    bl_description = ("En Edit Mode, selecciona la pieza (mascara, sombrero...) y crea un hueso que la mueve: "
-                      "sigue a la cabeza, pero se puede mover o escalar a 0 para quitarla")
+    bl_label = "Create accessory bone"
+    bl_description = ("In Edit Mode, select the piece (mask, hat...) and create a bone that moves it: "
+                      "it follows the head, but can be moved or scaled to 0 to remove it")
     bl_options = {"REGISTER", "UNDO"}
 
-    name: bpy.props.StringProperty(name="Nombre", default="Accesorio")
+    name: bpy.props.StringProperty(name="Name", default="Accesorio")  # the bone's name
 
     @classmethod
     def poll(cls, context):
@@ -186,7 +187,7 @@ class STRINOVA_OT_accessory(bpy.types.Operator):
         sel = [v.index for v in mesh.data.vertices if v.select]
         if not sel:
             bpy.ops.object.mode_set(mode="EDIT")
-            self.report({"ERROR"}, "Selecciona la pieza en Edit Mode (L sobre ella)")
+            self.report({"ERROR"}, rpt_("Select the piece in Edit Mode (L over it)"))
             return {"CANCELLED"}
         # parent: the body bone that most of the piece follows today
         total = {}
@@ -223,7 +224,7 @@ class STRINOVA_OT_accessory(bpy.types.Operator):
         for pb in rig.pose.bones:  # Blender 5: selection lives on the pose bone
             pb.select = pb.name == bone
         rig.data.bones.active = rig.data.bones[bone]
-        self.report({"INFO"}, f"{bone}: {len(sel)} vertices, sigue a {parent or 'el rig'}")
+        self.report({"INFO"}, rpt_("{}: {} vertices, follows {}").format(bone, len(sel), parent or rpt_("the rig")))
         return {"FINISHED"}
 
 

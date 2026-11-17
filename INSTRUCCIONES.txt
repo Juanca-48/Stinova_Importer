@@ -6,6 +6,10 @@ toon shading, iluminación, rig con controles de cara y física de pelo y ropa.
 
 Compatible con los dos formatos de modelo: .uemodel y .fbx.
 
+Idioma: el panel sale en español si Blender tiene la interfaz en español
+(Edit > Preferences > Interface > Translation); si no, en inglés.
+English guide: INSTRUCTIONS.txt.
+
 
 1. REQUISITOS
 -------------
@@ -130,6 +134,9 @@ También están en Object Properties > Custom Properties del rig.
 - Seguidor de cabeza: la cabeza apunta al control "head-controller" delante
   de la cara. Se apaga con "Use Head Controller" en el engranaje sobre la
   cabeza (plate-settings).
+- El hombro automático de Gacha Setup está apagado: retorcía el brazo
+  superior al mover la mano. Se vuelve a encender con "Toggle Shoulder
+  Constraints" en plate-settings.
 
 
 7. CARA
@@ -289,5 +296,7 @@ Módulos (carpeta strinova_toon):
   accessory.py  Huesos e interruptores de accesorios.
   weapon.py     Importar armas y objetos.
   common.py     Utilidades compartidas.
+  i18n.py       Traducción al español de la interfaz. Los textos se escriben
+                en inglés; cada texto nuevo necesita su línea aquí.
   materials.json  Datos de todos los materiales de los personajes.
   __init__.py   Panel y registro.

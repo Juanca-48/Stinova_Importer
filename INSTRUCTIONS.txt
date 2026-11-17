@@ -1,0 +1,304 @@
+STRINOVA TOON SETUP - USER GUIDE
+================================
+
+Blender add-on that imports Strinova characters and gets them ready to use:
+toon shading, lighting, a rig with face controls, and hair and clothes physics.
+
+Works with both model formats: .uemodel and .fbx.
+
+Language: the panel is in English, or in Spanish when Blender's interface is
+in Spanish (Edit > Preferences > Interface > Translation). Some names the
+add-on creates inside the scene (bone collections, controls, collections) are
+in Spanish; this guide gives each one's meaning the first time it appears.
+Spanish guide: INSTRUCCIONES.txt.
+
+
+1. REQUIREMENTS
+---------------
+
+- Blender 5.2.
+- Gacha Setup (the "setup_wizard" add-on): required to generate the rig.
+  https://github.com/PaoloESAN/gacha-setup/releases
+- UEFormat v10 or later: only to import .uemodel files.
+  Not needed for .fbx.
+  https://github.com/h4lfheart/UEFormat
+- For the toon shading, the character's textures (.png), in a folder named
+  after it (for example ...\Kanami\, with its skins inside, like the one
+  FModel exports). Each material's data (which texture goes in each channel,
+  shine, transparency...) is already bundled with the add-on
+  (strinova_toon\materials.json), so FModel's .json files are not needed.
+  If the folder does have the .json files, those are used (in case they are
+  newer).
+  The model can come from another source; without the textures the importer,
+  the rig and the face work the same, but the materials stay as imported.
+
+
+2. INSTALLATION
+---------------
+
+Normal installation:
+  1. On GitHub, in the Releases section (right column of the repository),
+     download strinova_toon-vX.Y.Z.zip from the latest version.
+     Don't unzip it.
+  2. (For the development version, without a release: green "Code >
+     Download ZIP" button, unzip it and zip the "strinova_toon" folder on
+     its own.)
+  3. In Blender: Edit > Preferences > Add-ons > Install from Disk, pick the zip.
+  4. Enable "Strinova Toon Setup" and "Gacha Setup".
+
+For development (Blender loads the add-on straight from the repository):
+  Close Blender and run in PowerShell:
+
+    New-Item -ItemType Junction `
+      -Path "$env:APPDATA\Blender Foundation\Blender\5.2\scripts\addons\strinova_toon" `
+      -Target "<repository path>\strinova_toon"
+
+  Then enable it in Preferences > Add-ons. Changes show up when you restart
+  Blender or reload the add-on.
+
+
+3. IMPORTING A CHARACTER
+------------------------
+
+The panel is in the 3D viewport, "Strinova" tab (N key).
+
+- "Import character" accepts:
+    * a .uemodel or .fbx file, or
+    * a skin's folder: go into it without picking a file and press Import.
+      It takes its 3D model (the lobby one if there is one, since it has the
+      expressions) and its paper version, and imports them together.
+- Checkboxes under the button:
+    * Apply Toon Shading: materials, lighting and outline.
+    * Generate rig: rig with Gacha Setup, face controls and physics.
+    * Include paper version: also brings the skin's paper version.
+- "Character folder": FModel's export folder with textures and materials.
+  It fills itself in when importing from FModel. You only need to set it
+  when importing an .fbx saved somewhere else: the add-on recognizes the
+  character by its folder names (.../<Character>/<Skin>/Mesh3D/...) and looks
+  for its textures in FModel's export.
+- Everything imported goes into a "<Character> <Skin>" collection, for
+  example "Flavia S001" or "Kanami Ruiseñor".
+
+Which model to use: each skin has the match model (Mesh3D) and the lobby one
+(Mesh3DLobby). Almost always only the lobby one has the facial expressions.
+
+
+4. CHARACTER PANEL
+------------------
+
+With the character (mesh or rig) selected, the panel shows a collapsible
+section with its name:
+
+- Outline width: thickness of the outline.
+- Paper version: switches between the 3D model and the paper one (see 8).
+- Show <accessory>: shows or hides each accessory (see 9).
+- Create accessory bone: see 9.
+- Physics: turns physics on or off instantly. Animatable.
+- Hair / Bangs / Clothes / Chest inertia: how much they lag and drag.
+  Starting values: 0.56 / 0.28 / 0.32 / 0.20. Bangs and the front locks
+  move half as much as the back hair.
+
+These values are properties of each rig: every character has its own.
+They are also in the rig's Object Properties > Custom Properties.
+
+
+5. SHADING AND LIGHTING
+-----------------------
+
+- Materials are rebuilt from the textures and the material data (bundled
+  with the add-on, or FModel's .json files if present): toon with sunlight,
+  face with soft shadow (SDF), normal map and matcap.
+- Outline: inverted hull ("ST Outline" modifier). No outline on the face and
+  eyes, like in the game. Color: the base texture, darkened.
+- Lighting controls (rig bone collection "Iluminacion", lighting):
+    * Wheels "Luz" (light, the lit side) and "Ambiente" (ambient, the
+      shadow): the picker's position sets hue and saturation; the bar,
+      brightness.
+    * "ST Sol" (sun): light comes from this control toward the head and moves
+      the shadows of the body and the face.
+  They animate in the same action as the character.
+- Each character has its own sun and controls: two characters can be lit
+  differently (one indoors and one outdoors).
+- The three head empties (ST_HeadOrigin / Forward / Up) give the head's
+  orientation for the face shadow. They are disabled in the viewport to stay
+  out of the way; turn them on with the monitor icon in the Outliner.
+
+
+6. RIG AND PHYSICS
+------------------
+
+- Rigify rig generated with Gacha Setup's NTE rigger (Strinova shares its
+  Bip001 skeleton).
+- Constraint-based physics, like Gacha Setup: each hair, clothes and chest
+  bone points at its child with a Damped Track and trails behind the body
+  when animating.
+- Limitation: the result depends on the frames evaluated before. Playing
+  straight through doesn't give the same as jumping to a frame, and a render
+  of single frames can differ from the viewport.
+- Head follow: the head aims at the "head-controller" control in front of
+  the face. Turn it off with "Use Head Controller" on the gear above the
+  head (plate-settings).
+- Gacha Setup's automatic shoulder is off: it twisted the upper arm when
+  moving the hand. Turn it back on with "Toggle Shoulder Constraints" in
+  plate-settings.
+
+
+7. FACE
+-------
+
+Expression controls (shape keys) are sorted into titled sections, each with
+its bone collection inside "Face":
+
+  Left of the face: Ojos (eyes), Pupilas (pupils), Cejas (brows).
+  Right: Boca (mouth), Labios (lips), Cabeza y otros (head and others).
+
+- Boca: the ones that open the mouth, and the phonemes. Labios: the ones
+  that move it without opening it (smiles, corners, teeth, tongue). They are
+  told apart by measuring the model's geometry when the rig is generated.
+- Ojos, Pupilas and Cejas are split into "Ambos" (both), "Derecha" (right)
+  and "Izquierda" (left). Facing the character, each block sits on the side
+  of the face it moves.
+- Each control is a small bar that slides up (0 at the bottom, 1 at the top)
+  along a guide marking the minimum and maximum.
+- Blink: if the model closes each eye with its own control, "CTRL-ST
+  Parpadeo" (blink) is added to the "Ambos" block of Ojos, closing both at
+  once. Winks still work.
+- Gaze: "Mirada" control in front of the face, with a target per eye
+  (Mirada.L / Mirada.R).
+- Face bones: Fragrans, Yugiri and Mara (and the eyelids of Chiyo's match
+  model) have bones in the face. They show as circles in the "Cara: Huesos"
+  (face: bones) collection. Teeth and tongue go in "Cara: Boca interior"
+  (face: inner mouth), hidden on import.
+
+
+8. PAPER VERSION
+----------------
+
+Each skin has a paper version (Mesh2D folder): a flat sheet with the
+character painted on it.
+
+- With "Include paper version" (or importing the skin's folder) it is
+  imported along with the 3D model. It can also be imported later: if the
+  rigged 3D character is already in the scene, it joins it.
+- The same rig moves it and it uses the same lighting.
+- The panel's "Paper version" button (the rig's st_paper property) switches
+  between the two in a single frame. With a keyframe on each state the swap
+  is instant. The game hides it with the animation (a spin, opening the
+  arms): it's best to swap in the middle of a movement.
+- Without its 3D character in the scene, the paper version is imported on
+  its own, without a rig.
+
+
+9. ACCESSORIES (MASKS, HATS)
+----------------------------
+
+Each accessory has a bone in the "Accesorios" (accessories) collection (a
+small mask drawn in front of the piece). It's a child of the head: it follows
+the character, but can be moved, rotated or scaled to 0. It also has a
+"Show <accessory>" switch in the panel that hides it, with its outline, in
+the viewport and the render.
+
+- Masks with their own bone (Fragrans, Kanami S211-S215, MoBai S206-S210,
+  Eika S111): the control is created automatically.
+- Eika's masks (S001, S101, S103, S106, S107...): the "ACC-Mascara" control
+  is created automatically.
+- Other accessories (most hats): select the mesh, go into Edit Mode, select
+  the piece (L over it) and press "Create accessory bone". The piece becomes
+  rigid and moves only with its bone.
+
+
+10. WEAPONS
+-----------
+
+Weapons are imported separately, with the "Import weapon" button in the
+panel's "Weapons" section. Importing a character never brings its weapon.
+
+- Each weapon skin is several pieces: the body, its sight and sometimes a
+  pendant, each also in a lobby version.
+- Pick the weapon's body (or the skin's folder, without picking a file) and
+  it comes in assembled: the sight and the pendant hang from their bones
+  (Sight, Pendant) and follow the weapon. If the skin has no sight of its
+  own, it uses the base weapon's.
+- In the file browser's options, "Include sight" decides whether the sight
+  comes in or only the body.
+- If you pick any other piece (a sight, a pendant, a loose lobby version),
+  only that piece is imported.
+- Accepts .uemodel and .fbx. Each weapon goes into its own "Arma <name>"
+  (weapon) collection and doesn't touch the characters in the scene.
+- With "Apply Toon Shading" checked, the weapon gets the add-on's toon: the
+  same light and shadow as the characters, a matcap shine where the weapon
+  is polished metal, and its outline. Sight lenses become translucent glass.
+- Lighting: if a character is selected when importing (or a weapon already
+  using its light), the weapon uses that character's sun and panel colors,
+  so it matches when you put it in their hand. Otherwise it creates its own
+  sun.
+- Textures are looked up in FModel's SkinAssets folder: next to the model
+  if it comes from FModel, or from the panel's "Character folder" if it's an
+  .fbx.
+- Weapon controls ("Arma" bone collection):
+    * Yellow frame (Root): moves and rotates the whole weapon.
+    * Light blue circles: the moving parts, like the magazine (Magazine),
+      bolt (Pull), suppressor (Suppressor), foregrip (Foregrip) or the
+      katana's blade.
+    * Pink circles: the sight and the pendant.
+  The game's reference points (muzzle, shell ejection, aiming camera...)
+  are in the hidden "Sockets" collection.
+- Connect weapon: select the weapon and press "Connect weapon" in the
+  Weapons section. The cursor turns into an eyedropper: click the character
+  in the viewport (Esc or right click cancels; you can move the view
+  meanwhile). The weapon goes to their right hand and also takes that
+  character's light. Once connected, the panel shows who it's connected to,
+  the controls for both hands, and "Disconnect weapon", which releases it
+  and puts it back where it was before connecting.
+  The "Right hand (trigger)" switch lets go of it or takes it again
+  (animatable). Connected, the weapon follows the right hand, with the grip
+  in the palm, the barrel along the fingers and the top toward the thumb.
+  Off, the weapon goes back to where it was.
+  If the right arm was at rest, connecting puts it in the game's rest pose
+  ("low ready"): the grip at the right side of the waist, the stock by the
+  ribs and the barrel forward and down, crossing to the left. An arm already
+  posed is left alone.
+  To adjust the grip use the weapon's Root control (yellow frame), don't
+  move the weapon object: while connected, moving the object adds to the
+  grip and pulls it out of the hand.
+- Left hand: every weapon has the green "Agarre" (grip) control, a ring under
+  the barrel that slides along the weapon (only in that direction, along the
+  green guide marking its travel) and sticks to the underside of the weapon.
+  With the weapon connected and selected, "Connect left hand" switches the
+  left arm to IK, puts the hand on the grip (palm on it, fingers along the
+  barrel, thumb up) and hooks it on:
+    * Sliding the grip (G) carries the hand along the weapon.
+    * The left hand control still adjusts how it rests (move or turn it a
+      little), without letting go of the weapon.
+    * The "Left hand (grip)" switch lets go of it or takes it (animatable).
+  If the grip is farther than the arm can reach, the hand falls short: move
+  the grip closer to the handle or the weapon closer to the body.
+
+
+11. KNOWN LIMITATIONS
+---------------------
+
+- The shadow is a fixed tint, not the game's color ramps.
+- An .fbx exported with tools other than Blender may come with another
+  scale or with the bone axes changed.
+- Physics doesn't react to moving the root bone or to lifting the legs.
+
+
+12. FOR DEVELOPERS
+------------------
+
+Modules (strinova_toon folder):
+  importer.py   Import .uemodel / .fbx / skin folder and detect FModel's
+                folder.
+  shading.py    Toon materials, sun and head empties, lighting panel and
+                outline.
+  rig.py        Rig with Gacha Setup, fixes on top of it, and physics.
+  face.py       Face sections, gaze, blink and face bones.
+  paper.py      Paper version and the 3D / paper switch.
+  accessory.py  Accessory bones and switches.
+  weapon.py     Import weapons and props.
+  common.py     Shared helpers.
+  i18n.py       Spanish translation of the interface. UI text is written in
+                English; a new UI string needs its line here.
+  materials.json  Data for every character material.
+  __init__.py   Panel and registration.

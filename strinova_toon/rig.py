@@ -4,6 +4,7 @@ import bpy, re, math, contextlib
 from mathutils import Vector
 from .common import target_mesh
 from . import shading, face, accessory
+from .common import iface_, tip_, rpt_
 
 # ---------- rig + physics ----------
 PHYS_COLLECTIONS = ("Hair", "Clothes")
@@ -13,10 +14,10 @@ NOT_PHYSICS = {"SocketADS"}  # gameplay socket Gacha Setup files under Clothes
 PHYSICS_PROP = "st_physics"  # on/off toggle: multiplies every inertia influence, live and animatable
 INERTIA_PROPS = {  # group: (rig property, default influence, panel label)
     # 20% stiffer than Gacha Setup's 0.7 / 0.4: theirs felt too loose on Strinova's chains
-    "Hair": ("st_hair_inertia", 0.56, "Inercia pelo"),
-    "Bangs": ("st_bangs_inertia", 0.28, "Inercia flequillo"),  # bangs sway half as much as the back hair
-    "Clothes": ("st_cloth_inertia", 0.32, "Inercia ropa"),
-    "Breast": ("st_breast_inertia", 0.2, "Inercia pecho"),
+    "Hair": ("st_hair_inertia", 0.56, "Hair inertia"),
+    "Bangs": ("st_bangs_inertia", 0.28, "Bangs inertia"),  # bangs sway half as much as the back hair
+    "Clothes": ("st_cloth_inertia", 0.32, "Clothes inertia"),
+    "Breast": ("st_breast_inertia", 0.2, "Chest inertia"),
 }
 
 
@@ -60,10 +61,10 @@ def apply_inertia(rig):
     for g, (prop, default, label) in INERTIA_PROPS.items():
         if prop not in rig:
             rig[prop] = default
-        rig.id_properties_ui(prop).update(min=0.0, max=1.0, description=f"{label}: cuanto se retrasa y arrastra al animar")
+        rig.id_properties_ui(prop).update(min=0.0, max=1.0, description=tip_("{}: how much it lags and drags when animating").format(iface_(label)))
     if PHYSICS_PROP not in rig:
         rig[PHYSICS_PROP] = True
-    rig.id_properties_ui(PHYSICS_PROP).update(description="Activa la fisica de pelo, ropa y pecho")
+    rig.id_properties_ui(PHYSICS_PROP).update(description=tip_("Turns hair, clothes and chest physics on"))
 
     # Damped Track aims the bone's Y axis at its child. UEFormat imports Strinova's chain bones
     # pointing elsewhere (not at the child), so tracking would swing every bone ~90 deg at rest.
@@ -352,8 +353,8 @@ def fix_controls(context, rig):
 
 class STRINOVA_OT_rig(bpy.types.Operator):
     bl_idname = "strinova.rig_physics"
-    bl_label = "Generar rig"
-    bl_description = "Genera el rig Rigify con Gacha Setup (modo NTE), con controles de luz y fisica de pelo, ropa y pecho"
+    bl_label = "Generate rig"
+    bl_description = "Generates the Rigify rig with Gacha Setup (NTE mode), with lighting controls and hair, clothes and chest physics"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -363,15 +364,15 @@ class STRINOVA_OT_rig(bpy.types.Operator):
     def execute(self, context):
         prefs = context.preferences.addons
         if "setup_wizard" not in prefs:
-            self.report({"ERROR"}, "Activa el add-on Gacha Setup")
+            self.report({"ERROR"}, rpt_("Enable the Gacha Setup add-on"))
             return {"CANCELLED"}
         obj = target_mesh(context)
         arm = obj.find_armature()
         if not arm:
-            self.report({"ERROR"}, f"{obj.name} no tiene armature")
+            self.report({"ERROR"}, rpt_("{} has no armature").format(obj.name))
             return {"CANCELLED"}
         if "Bip001-Pelvis" not in arm.data.bones:
-            self.report({"ERROR"}, f"{arm.name} ya esta riggeado o no es un esqueleto de Strinova")
+            self.report({"ERROR"}, rpt_("{} is already rigged or is not a Strinova skeleton").format(arm.name))
             return {"CANCELLED"}
         for o in context.view_layer.objects:
             o.select_set(False)
@@ -385,7 +386,7 @@ class STRINOVA_OT_rig(bpy.types.Operator):
             bpy.ops.hoyoverse.rig_character(game_type="NEVERNESS_TO_EVERNESS")
             rig = obj.find_armature()
             if not rig or "DEF-spine.006" not in rig.pose.bones:
-                self.report({"ERROR"}, "Gacha Setup no genero el rig (revisa la consola)")
+                self.report({"ERROR"}, rpt_("Gacha Setup did not generate the rig (check the console)"))
                 return {"CANCELLED"}
             # Strinova's weights are authored for rigid bones. Rigify's B-bones (8-10 segments) bend the
             # mesh differently and, since Gacha's NTE rigger flips the roll of consecutive spine bones,
@@ -408,7 +409,7 @@ class STRINOVA_OT_rig(bpy.types.Operator):
                 settings["Use Head Controller"] = 1
             fix_controls(context, rig)
         n = apply_inertia(rig)
-        self.report({"INFO"}, f"Rig listo: {rig.name}, {n} cadenas con fisica")
+        self.report({"INFO"}, rpt_("Rig ready: {}, {} chains with physics").format(rig.name, n))
         return {"FINISHED"}
 
 

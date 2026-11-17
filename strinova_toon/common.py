@@ -1,4 +1,6 @@
 """Helpers shared by several modules."""
+# UI text is written in English; i18n.py translates it (Blender > Preferences > Interface > Language)
+from bpy.app.translations import pgettext_iface as iface_, pgettext_tip as tip_, pgettext_rpt as rpt_
 
 
 def target_mesh(context):

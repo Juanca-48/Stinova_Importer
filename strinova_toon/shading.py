@@ -8,7 +8,7 @@ shortcut: Mask1/Mask2 are not used yet; their channel meaning is still unverifie
 """
 import bpy, os, re, json, contextlib, functools, mathutils
 from math import cos, sin, tau  # imported by name: math() below is a node helper
-from .common import target_mesh
+from .common import target_mesh, rpt_
 
 SHADOW_TINT = (0.80, 0.70, 0.82, 1.0)
 
@@ -1138,8 +1138,8 @@ def lighting_panel_aside(context, obj):
 
 class STRINOVA_OT_setup(bpy.types.Operator):
     bl_idname = "strinova.setup_toon"
-    bl_label = "Aplicar Toon Shading"
-    bl_description = "Crea los node groups, el rig de luz/cabeza y reconstruye los materiales del personaje"
+    bl_label = "Apply Toon Shading"
+    bl_description = "Creates the node groups and the light/head rig, and rebuilds the character's materials"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
@@ -1150,20 +1150,20 @@ class STRINOVA_OT_setup(bpy.types.Operator):
         obj = target_mesh(context)
         char_dir = bpy.path.abspath(context.scene.strinova_char_dir)
         if not os.path.isdir(char_dir):
-            self.report({"ERROR"}, f"Carpeta no encontrada: {char_dir}")
+            self.report({"ERROR"}, rpt_("Folder not found: {}").format(char_dir))
             return {"CANCELLED"}
         if not obj.find_armature():
-            self.report({"ERROR"}, f"{obj.name} no tiene armature")
+            self.report({"ERROR"}, rpt_("{} has no armature").format(obj.name))
             return {"CANCELLED"}
         try:
             report = run(obj, char_dir)
         except KeyError as e:  # missing head bone
-            self.report({"ERROR"}, f"No se encontro el hueso {e}")
+            self.report({"ERROR"}, rpt_("Bone not found: {}").format(e))
             return {"CANCELLED"}
         for k, v in report.items():
             print(f"[Strinova] {k}: {v}")
         done = sum(isinstance(v, dict) for v in report.values())
-        self.report({"INFO"}, f"{done}/{len(report)} materiales configurados (detalle en la consola)")
+        self.report({"INFO"}, rpt_("{}/{} materials set up (details in the console)").format(done, len(report)))
         return {"FINISHED"}
 
 
