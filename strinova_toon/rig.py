@@ -187,6 +187,41 @@ def bend_straight_fingers(context, arm):
     return n
 
 
+def fix_thumb_axis(context, rig):
+    """Gacha's rigger lets Rigify infer the thumb's curl axis from how the thumb bends at rest; on some
+    skeletons (Flavia, Eika) that bend points back at the wrist, and closing the thumb folded it
+    towards the arm. Roll the whole thumb chain (controls, ORG, DEF, MCH: they share one axis) so a
+    curl turns the tip across the palm, to the ring and little fingers' base. Run before
+    fix_finger_curl, which picks the curl's sign from these rolls. Only rest frames change: the mesh
+    doesn't move."""
+    context.view_layer.objects.active = rig
+    bpy.ops.object.mode_set(mode="EDIT")
+    eb = rig.data.edit_bones
+    n = 0
+    for s in ("L", "R"):
+        t2, hand = eb.get(f"ORG-thumb.02.{s}"), eb.get(f"DEF-hand.{s}")
+        index, ring, pinky = (eb.get(f"DEF-f_{f}.01.{s}") for f in ("index", "ring", "pinky"))
+        if not (t2 and hand and index and ring and pinky):
+            continue
+        normal = (index.head - hand.head).cross(pinky.head - hand.head).normalized()
+        if normal.z > 0:  # palms face down in the rest pose: the palm side is -Z
+            normal.negate()
+        target = (ring.head + pinky.head) / 2 + normal * (index.head - pinky.head).length * 0.5
+        y = t2.vector.normalized()
+        toward = target - t2.tail
+        toward -= y * toward.dot(y)
+        hinge = y.cross(toward).normalized()  # a positive curl about +X turns +Y towards +Z, the target
+        for b in eb:
+            if re.search(rf"thumb\.0\d.*\.{s}(\.\d+)?$", b.name):
+                yb = b.vector.normalized()
+                h = hinge - yb * hinge.dot(yb)
+                if h.length > 1e-4:
+                    b.align_roll(h.normalized().cross(yb))  # Z = X x Y
+                    n += 1
+    bpy.ops.object.mode_set(mode="OBJECT")
+    return n
+
+
 @contextlib.contextmanager
 def others_aside(context, obj):
     """Gacha's NTE rigger works on the whole scene: it rebinds every mesh's Armature modifier to the
@@ -394,6 +429,7 @@ class STRINOVA_OT_rig(bpy.types.Operator):
             for b in rig.data.bones:
                 if b.name.startswith("DEF-"):
                     b.bbone_segments = 1
+            fix_thumb_axis(context, rig)
             fix_finger_curl(rig)
             fix_breasts(context, rig)
             face.add_gaze(context, rig)
