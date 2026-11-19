@@ -103,7 +103,8 @@ def register():
     bpy.types.Scene.strinova_char_dir = bpy.props.StringProperty(
         name="Character folder",
         subtype="DIR_PATH",
-        default=r"D:\Programas\Fmodel\Output\Exports\PM\Content\PaperMan\SkinAssets\Characters\Kanami",
+        description="Folder with the character's textures and material JSONs (FModel's Characters\\<Name>). "
+                    "Filled on import from the model's path",
     )
 
 

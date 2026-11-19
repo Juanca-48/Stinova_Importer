@@ -4,7 +4,7 @@ panel (HSV wheels + sun handle) and the inverted-hull outline.
 The shader reuses Gacha Setup's idea of light/head vectors stored as mesh attributes
 (lightDir, headForward, headUp).
 shortcut: shadow colour is a flat tint, not the game's RampID atlas; swap in ramps once exported.
-shortcut: Mask1/Mask2 are not used yet; their channel meaning is still unverified.
+shortcut: only Mask1.R is used (4-matcap atlas quarter); Mask2 and the other channels are still unverified.
 """
 import bpy, os, re, json, contextlib, functools, mathutils
 from math import cos, sin, tau  # imported by name: math() below is a node helper
@@ -30,6 +30,51 @@ def index_files(root, ext, prefer=None):
     return idx
 
 
+TEXTURE_LEVELS = 4  # folders above the model searched for its textures (Mesh3D < skin < name < Characters < export)
+# files: a bigger tree (a user folder, a whole drive) is no texture export and takes minutes to walk.
+# shortcut: a model with a texture missing from a shallow folder (Downloads\x) may walk up to this many
+# files of the user folder (~10 s on a cold disk) before giving up; lower it if that bites.
+WALK_CAP = 25000
+
+
+def texture_names(obj):
+    """Lower-case names of the textures `obj`'s materials use, from the bundled material table."""
+    names = set()
+    for slot in obj.material_slots:
+        if slot.material and not slot.material.name.endswith(OUTLINE_SUFFIX):
+            base = re.sub(r"\.\d{3}$", "", slot.material.name)
+            data = bundled_material(base, skin_of(base, ""), "") or {}
+            names |= {v["ObjectName"].split("'")[1].lower() for v in data.get("Textures", {}).values() if v}
+    return names
+
+
+def texture_root(path, names):
+    """The folder around a model file that holds its textures: its own folder first, then each parent
+    (up to TEXTURE_LEVELS, never a drive root), keeping the nearest one that finds the most of `names`
+    (any PNG when empty). None if none has any."""
+    best, best_n, stale = None, 0, 0
+    folder = os.path.dirname(os.path.abspath(path))
+    for _ in range(TEXTURE_LEVELS + 1):
+        if os.path.dirname(folder) == folder:
+            break  # a drive root
+        found, seen = set(), 0
+        for _d, _, files in os.walk(folder):
+            seen += len(files)
+            if seen > WALK_CAP:
+                return best
+            found |= {n for n in (os.path.splitext(f)[0].lower() for f in files if f.lower().endswith(".png"))
+                      if not names or n in names}
+            if found and (not names or found >= names):
+                return folder  # all of them (or, with no names, any PNG): nothing nearer was better
+        stale = stale + 1 if best and len(found) <= best_n else 0
+        if stale == 2:
+            break  # two levels up found nothing new: the rest is missing from the export, not further up
+        if len(found) > best_n:
+            best, best_n = folder, len(found)
+        folder = os.path.dirname(folder)
+    return best
+
+
 MISSING = "falta textura: "  # report entry of a material whose texture file isn't in the folder
 
 
@@ -50,7 +95,7 @@ def source_skin_dir(obj):
 def pick(idx, name, skin):
     paths = idx.get(name.lower()) or []
     for p in paths:  # prefer the skin folder the asset belongs to
-        if f"\\{skin}\\" in p:
+        if f"{os.sep}{skin}{os.sep}" in p:
             return p
     return paths[0] if paths else None
 

@@ -397,8 +397,11 @@ def fix_arm_pole(context, rig, side):
         context.view_layer.update()
         return max(pb[n].matrix.to_quaternion().rotation_difference(keep[n].to_quaternion()).angle for n in names)
 
-    best = min((math.radians(a) for a in range(-180, 180, 5)), key=drift)
-    best = min((best + math.radians(a) / 4 for a in range(-20, 21)), key=drift)
+    # each try re-evaluates the scene (~40 ms): 15-degree sweep, then halve the step around the best (~37 tries, not 114)
+    best, step = min((math.radians(a) for a in range(-180, 180, 15)), key=drift), math.radians(15)
+    while step > math.radians(1):
+        step /= 2
+        best = min((best - step, best, best + step), key=drift)
     drift(best)
 
 

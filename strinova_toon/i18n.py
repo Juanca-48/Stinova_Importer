@@ -6,6 +6,10 @@ ES = {
     # panel
     "Character folder:": "Carpeta del personaje:",
     "Character folder": "Carpeta del personaje",
+    "Folder with the character's textures and material JSONs (FModel's Characters\\<Name>). "
+    "Filled on import from the model's path":
+        "Carpeta con las texturas y los JSON de materiales del personaje (Characters\\<Nombre> de FModel). "
+        "Se rellena al importar a partir de la ruta del modelo",
     "Weapons": "Armas",
     "In the hand of {}": "En la mano de {}",
     "Right hand (trigger)": "Mano derecha (gatillo)",

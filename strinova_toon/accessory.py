@@ -4,7 +4,7 @@ import. Most hats share the head's or a hair bone's weights, so they get none.""
 import bpy, re
 from mathutils import Vector
 from . import shading, common
-from .common import iface_, tip_, rpt_
+from .common import tip_
 
 COLL = "Accessories"
 PREFIX = "ACC-"

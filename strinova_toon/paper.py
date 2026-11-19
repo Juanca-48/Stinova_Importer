@@ -7,8 +7,7 @@ rig's "st_paper" property does the same (keyframe it: a bool keys with constant 
 """
 import bpy, os, re
 from . import common
-from .common import iface_, tip_, rpt_
-from mathutils import Vector
+from .common import tip_
 
 PAPER_PROP = "st_paper"
 BODY = {  # Bip001-<x> -> Rigify deform bone (Gacha Setup's NTE table)
