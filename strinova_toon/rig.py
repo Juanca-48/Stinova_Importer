@@ -365,14 +365,21 @@ FINGER_MASTER = re.compile(r"(f_\w+|thumb)\.01_master\.[LR]")
 
 POLE_DIST = 0.6  # m from the elbow / knee
 POLES = "IK Poles"  # bone collection of the pole targets and their guide lines: hidden, toggled in the list
-LIMBS = {  # limb: (Rigify bones upper / lower / end, pole parent (None: keep Gacha's), pole side: +Y back,
-    #   -Y front, pole left on)
-    # arms: the pole is set up but left off, so turning upper_arm_ik swings the elbow (Rigify's "Pole"
-    # switch turns it on, already placed and aimed)
-    "arm": (("upper_arm", "forearm", "hand"), "Chest", 1, False),  # elbow target behind
-    "leg": (("thigh", "shin", "foot"), None, -1, True),  # knee target in front (Gacha's parent: Hips)
+LIMBS = {  # limb: (Rigify bones upper / lower / end, pole parent (None: keep Gacha's), pole side: +Y back, -Y front)
+    "arm": (("upper_arm", "forearm", "hand"), "Chest", 1),  # elbow target behind
+    "leg": (("thigh", "shin", "foot"), None, -1),  # knee target in front (Gacha's parent: Hips)
 }
+# the panel's IK method (scene.strinova_ik_mode): with "ROTATION" every pole is set up but left off, so
+# turning upper_arm_ik / thigh_ik swings the elbow / knee; Rigify's "Pole" switch turns one on, ready
+IK_MODES = (("ROTATION", "Rotation", "Elbows and knees swing by rotating the arm and leg IK controls "
+             "(upper_arm_ik, thigh_ik). Their poles are ready but off: Rigify's Pole switch turns them on"),
+            ("POLES", "Poles", "Elbows and knees aim at pole targets, 60 cm away, shown in the IK Poles bone "
+             "collection; the arm and leg IK controls' rotation does nothing then, so they are hidden"))
 SHOULDER_TOGGLE = "Toggle Shoulder Constraints"
+# Gacha's automatic-shoulder helpers, left in no bone collection (so always shown): one sits metres away
+SHOULDER_HELPERS = ("MCH-shoulder_hand", "MCH-shoulder_follow", "shoulder_driver")
+LIMB_SETTINGS = ("upper_arm_parent", "thigh_parent")  # hidden in "Other"
+SHOULDER_OUT = 0.7  # shoulder control drawn this share of the way to the upper arm: its bone starts at the neck
 
 
 def _enum_index(pb, prop, name):
@@ -400,15 +407,16 @@ def add_head_target_parent(rig, name):
     ui.update(items=[tuple(it) for it in ui.as_dict()["items"]] + [(f"P{i}", name, "", 0, i)])  # the whole list: update replaces it
 
 
-def fix_limb_pole(context, rig, limb, side):
+def fix_limb_pole(context, rig, limb, side, pole_on):
     """Arms and legs with their pole on. Gacha leaves the pole IK muted, and the pole-less IK bends the
     limb the way its bones bend at rest: the arms rest in a T-pose while the character stands in an
     A-pose (moving the hand, the elbow flew up and out and the arm turned on itself), and the legs rest
     almost straight (knee 1.6 mm off the hip-ankle line on Eika), so lifting the foot sent the knee
     outwards. Here the pole IK takes over (as Rigify's own pole toggle does), its target sits right
     behind the elbow / in front of the knee, and its angle is the one that leaves the starting pose as
-    it was. The arms' pole is then switched back off (LIMBS): turning upper_arm_ik swings the elbow."""
-    (upper, lower, end), parent, way, pole_on = LIMBS[limb]
+    it was. Without `pole_on` (the panel's Rotation method) the pole is then switched back off: turning
+    upper_arm_ik / thigh_ik swings the elbow / knee."""
+    (upper, lower, end), parent, way = LIMBS[limb]
     pb = rig.pose.bones
     joint, par, target = pb.get(f"MCH-{lower}_ik.{side}"), pb.get(f"{upper}_parent.{side}"), pb.get(f"{upper}_ik_target.{side}")
     cons = [c for c in joint.constraints if c.type == "IK"] if joint else []
@@ -465,7 +473,7 @@ def fix_limb_pole(context, rig, limb, side):
         context.view_layer.update()
 
 
-def fix_controls(context, rig):
+def fix_controls(context, rig, poles=False):
     """Gacha defaults that fight the animator (and the automatic shoulder, below):
     - the head's look-at target (head-controller) hangs from root.002, so turning the torso left
       the head staring at a fixed point and twisting. It now follows the neck (added to its parent
@@ -484,10 +492,40 @@ def fix_controls(context, rig):
     if settings and SHOULDER_TOGGLE in settings:
         settings[SHOULDER_TOGGLE] = 0
         rig.update_tag()
+    other = rig.data.collections_all.get("Other") or rig.data.collections.new("Other")
+    for side in ("L", "R"):
+        for n in SHOULDER_HELPERS:
+            b = rig.data.bones.get(f"{n}.{side}")
+            if b and not b.collections:
+                other.assign(b)
+        # the limbs' settings holders (IK_FK, pole_vector...): they move nothing, and the panel shows
+        # their settings with any control of the limb selected
+        for n in LIMB_SETTINGS:
+            b = rig.data.bones.get(f"{n}.{side}")
+            if b:
+                for c in list(b.collections):
+                    c.unassign(b)
+                other.assign(b)
+        # only the drawing moves out, clear of the neck: the bone, the shoulder's pivot, stays
+        pb, arm = rig.pose.bones.get(f"shoulder.{side}"), rig.data.bones.get(f"DEF-upper_arm.{side}")
+        if pb and arm:
+            out = arm.head_local - pb.bone.head_local
+            out.y = 0.0  # sideways (and up), not back or forth
+            pb.custom_shape_translation = pb.bone.matrix_local.to_3x3().inverted() @ (out * SHOULDER_OUT)
     if rig.name in context.view_layer.objects and rig.mode != "EDIT":
         for limb in LIMBS:
             for side in ("L", "R"):
-                fix_limb_pole(context, rig, limb, side)
+                fix_limb_pole(context, rig, limb, side, poles)
+        if poles:  # the poles steer elbows and knees: shown; turning the IK controls does nothing then: hidden
+            if POLES in rig.data.collections_all:
+                rig.data.collections_all[POLES].is_visible = True
+            for (upper, _, _), _, _ in LIMBS.values():
+                for side in ("L", "R"):
+                    b = rig.data.bones.get(f"{upper}_ik.{side}")
+                    if b:
+                        for c in list(b.collections):
+                            c.unassign(b)
+                        other.assign(b)
     pb = rig.pose.bones.get(HEAD_TARGET)
     if not pb or "parent_switch" not in pb:
         return
@@ -568,7 +606,7 @@ class STRINOVA_OT_rig(bpy.types.Operator):
             settings = rig.pose.bones.get("plate-settings")
             if settings and "Use Head Controller" in settings:
                 settings["Use Head Controller"] = 1
-            fix_controls(context, rig)
+            fix_controls(context, rig, context.scene.strinova_ik_mode == "POLES")
         n = apply_inertia(rig)
         self.report({"INFO"}, rpt_("Rig ready: {}, {} chains with physics").format(rig.name, n))
         return {"FINISHED"}

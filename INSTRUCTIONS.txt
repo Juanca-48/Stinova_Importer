@@ -72,13 +72,14 @@ The panel is in the 3D viewport, "Strinova" tab (N key).
 - Checkboxes under the button:
     * Apply Toon Shading: materials, lighting and outline.
     * Generate rig: rig with Gacha Setup, face controls and physics.
+      Under it, the IK method for arms and legs: Rotation or Poles (see 6).
     * Include paper version: also brings the skin's paper version.
-- "Character folder": where the textures (and FModel's .json files) are
+- "Root folder": where the textures (and FModel's .json files) are
   taken from. It fills itself in on import, you don't need to set it first:
     * from FModel's export, it is the character's folder (...\Characters\<Name>);
     * anywhere else (an .fbx, another export), the add-on looks for the
       model's textures in its own folder first and then in the folders above
-      it (up to 4 levels), and keeps the nearest one that has them.
+      it (up to 7 levels), and keeps the nearest one that has them.
   Only if they are nowhere near the model does it look for the character in
   FModel's export (the "FModel export folder" of the add-on's preferences)
   or use the folder already in the panel: set it to the folder with the
@@ -148,12 +149,21 @@ They are also in the rig's Object Properties > Custom Properties.
   carries the head, and moving the control aims it. Its parent can be
   changed in the rig's panel (parent_switch). Turn it off with "Use Head
   Controller" on the gear above the head (plate-settings).
-- Elbows: in IK, rotate the arm's IK control (upper_arm_ik) to swing the
-  elbow. The arm's "Pole" switch (Rigify panel) aims it at a pole target
-  instead, already placed 60 cm behind the elbow.
-- Knees: the leg IK aims the knee forward with a pole target 60 cm in front.
-  Pole targets are hidden in the "IK Poles" bone collection: show it (eye
-  icon in the Bone Collections list) to move them.
+- Elbows and knees: chosen in the panel before importing, under "Generate
+  rig" (same for arms and legs):
+    * Rotation: rotate the IK control (upper_arm_ik, thigh_ik) to swing the
+      elbow or knee. The poles are ready but off: the limb's "Pole" switch
+      (Rigify panel) turns one on.
+    * Poles: the elbow aims back and the knee forward at pole targets 60 cm
+      away, shown in the "IK Poles" bone collection. The IK controls whose
+      rotation swings them (upper_arm_ik, thigh_ik) do nothing then, so they
+      are hidden (in "Other").
+  Either way the knee bends forward. With Rotation the pole targets are
+  hidden: show "IK Poles" (eye icon in the Bone Collections list) to move
+  them.
+- Hidden helpers: the limbs' settings bones (upper_arm_parent,
+  thigh_parent) and the automatic shoulder's helpers are in the hidden
+  "Other" collection; their settings still show in the panel.
 - Gacha Setup's automatic shoulder is off: it twisted the upper arm when
   moving the hand. Turn it back on with "Toggle Shoulder Constraints" in
   plate-settings.

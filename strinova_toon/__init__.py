@@ -2,7 +2,7 @@
 bl_info = {
     "name": "Strinova Toon Setup",
     "author": "juanc",
-    "version": (1, 1, 2),
+    "version": (1, 1, 3),
     "blender": (5, 2, 0),
     "location": "3D View > Sidebar (N) > Strinova",
     "description": "Imports Strinova characters (FModel) with toon shading, rig and constraint-based physics",
@@ -27,14 +27,17 @@ class STRINOVA_PT_panel(bpy.types.Panel):
 
     def draw(self, context):
         col = self.layout.column()
+        col.label(text="Root folder:")
+        col.prop(context.scene, "strinova_char_dir", text="")
+        col.separator()
         col.operator(importer.STRINOVA_OT_import.bl_idname, icon="IMPORT")
         opts = col.column(align=True)
         opts.prop(context.scene, "strinova_do_shading")
         opts.prop(context.scene, "strinova_do_rig")
+        ik = opts.row(align=True)
+        ik.active = context.scene.strinova_do_rig
+        ik.prop(context.scene, "strinova_ik_mode", expand=True)
         opts.prop(context.scene, "strinova_do_paper")
-        col.separator()
-        col.label(text="Character folder:")
-        col.prop(context.scene, "strinova_char_dir", text="")
         # weapons are imported apart: many are shared by several skins, and a skin never brings its weapon
         header, body = col.panel("strinova_weapons", default_closed=False)
         header.label(text="Weapons", icon="MOD_ARMATURE")
@@ -110,11 +113,14 @@ def register():
         name="Apply Toon Shading", default=True, description="Toon materials, lighting and outline on import")
     bpy.types.Scene.strinova_do_rig = bpy.props.BoolProperty(
         name="Generate rig", default=True, description="Rig with Gacha Setup, face, gaze and physics on import")
+    bpy.types.Scene.strinova_ik_mode = bpy.props.EnumProperty(
+        name="IK method", items=rig.IK_MODES, default="ROTATION",
+        description="How the generated rig's arm and leg IK aims the elbows and knees")
     bpy.types.Scene.strinova_do_paper = bpy.props.BoolProperty(
         name="Include paper version", default=False,
         description="Also imports the skin's paper version (Mesh2D), joined to the 3D rig with its switch")
     bpy.types.Scene.strinova_char_dir = bpy.props.StringProperty(
-        name="Character folder",
+        name="Root folder",
         subtype="DIR_PATH",
         description="Folder with the character's textures and material JSONs (FModel's Characters\\<Name>). "
                     "Filled on import from the model's path",
@@ -125,6 +131,7 @@ def unregister():
     del bpy.types.Scene.strinova_char_dir
     del bpy.types.Scene.strinova_do_shading
     del bpy.types.Scene.strinova_do_rig
+    del bpy.types.Scene.strinova_ik_mode
     del bpy.types.Scene.strinova_do_paper
     for c in reversed(classes):
         bpy.utils.unregister_class(c)

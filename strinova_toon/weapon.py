@@ -86,7 +86,7 @@ def assets_root(path, char_dir, meshes=()):
     """Where a weapon's textures (and material JSONs) are: FModel's SkinAssets folder if the model is in
     it (weapon textures in Weapons, the metal matcap in Characters/PBR); else, like a character, the
     nearest folder around the model holding the textures its materials name in the bundled table (a
-    weapon missing from it: its material JSONs); else SkinAssets from the panel's character folder or
+    weapon missing from it: its material JSONs); else SkinAssets from the panel's Root folder or
     from the FModel export remembered in the preferences."""
     def in_skin_assets(p):
         return p and "SkinAssets" in os.path.normpath(bpy.path.abspath(p)).split(os.sep)
@@ -658,6 +658,10 @@ class STRINOVA_OT_import_weapon(bpy.types.Operator, ImportHelper):
     directory: bpy.props.StringProperty(subtype="DIR_PATH", options={"HIDDEN", "SKIP_SAVE"})
     sight: bpy.props.BoolProperty(name="Include sight", default=True,
                                   description="Brings the weapon's sight and puts it in place; without it, only the body")
+
+    def invoke(self, context, event):
+        common.browse_from_root(self, context)
+        return super().invoke(context, event)
 
     def execute(self, context):
         path = self.filepath
