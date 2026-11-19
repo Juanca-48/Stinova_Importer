@@ -6,6 +6,10 @@ ES = {
     # panel
     "Character folder:": "Carpeta del personaje:",
     "Character folder": "Carpeta del personaje",
+    "Folder with the character's textures and material JSONs (FModel's Characters\\<Name>). "
+    "Filled on import from the model's path":
+        "Carpeta con las texturas y los JSON de materiales del personaje (Characters\\<Nombre> de FModel). "
+        "Se rellena al importar a partir de la ruta del modelo",
     "Weapons": "Armas",
     "In the hand of {}": "En la mano de {}",
     "Right hand (trigger)": "Mano derecha (gatillo)",
@@ -45,6 +49,15 @@ ES = {
     "{} has no armature": "{} no tiene armature",
     "Bone not found: {}": "No se encontró el hueso {}",
     "{}/{} materials set up (details in the console)": "{}/{} materiales configurados (detalle en la consola)",
+    "{} of {} materials without textures (e.g. {}): not found in {}. Check the Character folder":
+        "{} de {} materiales sin texturas (p. ej. {}): no están en {}. Revisa la Carpeta del personaje",
+    " | {} materials without textures: check the Character folder ({})":
+        " | {} materiales sin texturas: revisa la Carpeta del personaje ({})",
+    " | {} materials without textures: not found in {}": " | {} materiales sin texturas: no están en {}",
+    " | no facial expressions in this model: import the lobby one, {}":
+        " | este modelo no trae expresiones faciales: importa el de lobby, {}",
+    " | no facial expressions in this model (the lobby model, Mesh3DLobby, usually has them)":
+        " | este modelo no trae expresiones faciales (el de lobby, Mesh3DLobby, suele traerlas)",
     # rig
     "Generates the Rigify rig with Gacha Setup (NTE mode), with lighting controls and hair, clothes and chest physics":
         "Genera el rig Rigify con Gacha Setup (modo NTE), con controles de luz y física de pelo, ropa y pecho",
@@ -77,8 +90,16 @@ ES = {
     "The file has no model": "El archivo no trae ningún modelo",
     ", {}/{} materials": ", {}/{} materiales",
     ", lit by {}": ", con la luz de {}",
-    ", no shading: FModel's SkinAssets folder not found (check the character folder)":
-        ", sin shading: no encuentro la carpeta SkinAssets de FModel (revisa la carpeta del personaje)",
+    ", no shading: FModel's SkinAssets folder not found (set it in the add-on's preferences)":
+        ", sin shading: no encuentro la carpeta SkinAssets de FModel (ponla en las preferencias del add-on)",
+    # preferences
+    "FModel export folder": "Carpeta de exportación de FModel",
+    "FModel's export with the game's textures (the folder holding SkinAssets, or SkinAssets itself). "
+    "Filled in by itself the first time you import from it. Used when a model elsewhere (an .fbx, a "
+    "weapon) has no textures near it":
+        "La exportación de FModel con las texturas del juego (la carpeta que contiene SkinAssets, o SkinAssets). "
+        "Se rellena sola la primera vez que importas desde ella. Se usa cuando un modelo guardado en otro sitio "
+        "(un .fbx, un arma) no tiene texturas cerca",
     ", with {}": ", con {}",
     " and ": " y ",
     "sight": "mira",

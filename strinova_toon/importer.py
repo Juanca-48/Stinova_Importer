@@ -1,23 +1,34 @@
-"""Import: .uemodel (UEFormat) or .fbx, detect the FModel character folder, then optionally run the
-shading and rig operators (called through bpy.ops, so this module does not depend on them)."""
+"""Import: .uemodel (UEFormat) or .fbx, find the character's texture folder, then optionally run the
+shading and rig operators (through bpy.ops)."""
 import bpy, os, re, glob
 from bpy_extras.io_utils import ImportHelper
-from . import paper
-from .common import iface_, tip_, rpt_
+from . import paper, shading, common
+from .common import rpt_
 
 
-def char_dir_from(path, current=""):
+def char_dir_from(path, mesh=None, current=""):
+    """The folder the shading takes textures and material JSONs from, for a model at `path`."""
     # FModel layout: .../Characters/<Name>/<Skin>/Mesh3D/SK_*.uemodel
     parts = os.path.normpath(path).split(os.sep)
     if "Characters" in parts and parts.index("Characters") + 1 < len(parts) - 1:
         return os.sep.join(parts[: parts.index("Characters") + 2])
+    # anywhere else: the model's own folder first, then up (an FBX next to its textures, or in a tree
+    # beside them), so nothing has to be set in the panel beforehand
+    found = shading.texture_root(path, shading.texture_names(mesh) if mesh else set())
+    if found:
+        return found
     # FBX kept outside the FModel export in a <Name>/<Skin>/... tree: textures and material JSONs
-    # stay in FModel's export, so take <Name>'s folder next to the one already set in the panel
-    chars_root = os.path.dirname(os.path.normpath(current)) if current else ""
-    for p in reversed(parts[:-1]):
-        if chars_root and os.path.isdir(os.path.join(chars_root, p)):
-            return os.path.join(chars_root, p)
-    return None  # e.g. an FBX saved elsewhere: keep the folder already set in the panel
+    # stay in FModel's export, so take <Name>'s folder next to the one already set in the panel, or in
+    # the FModel export remembered in the preferences
+    fm = common.fmodel_root()
+    roots = [os.path.dirname(os.path.normpath(current)) if current else "", os.path.join(fm, "Characters") if fm else ""]
+    for chars_root in filter(None, roots):
+        for p in reversed(parts[1:-1]):  # not the drive: join(root, "D:") is "D:"
+            if os.path.isdir(os.path.join(chars_root, p)):
+                return os.path.join(chars_root, p)
+    if not (current and os.path.isdir(bpy.path.abspath(current))):
+        return os.path.dirname(path)  # no textures anywhere near: the shading reports them missing
+    return None  # keep the folder already set in the panel
 
 
 def skin_folder(path):
@@ -56,11 +67,14 @@ def models_in(folder):
     return model, first_model(os.path.join(folder, "Mesh2D"), recursive=True)
 
 
-def collection_name(path, char_dir):
-    """'<Character> <Skin>' from the file path (e.g. 'Flavia S001', 'Kanami Ruiseñor'), else the file name."""
-    skin = skin_folder(path)
-    char = os.path.basename(char_dir) if char_dir else None
-    return " ".join(x for x in (char, skin) if x) or os.path.splitext(os.path.basename(path))[0]
+def collection_name(path):
+    """'<Character> <Skin>' from a <Character>/<Skin>/Mesh* path (e.g. 'Flavia S001', 'Kanami Ruiseñor'),
+    else the file name."""
+    parts = os.path.normpath(path).split(os.sep)
+    i = next((i for i in range(len(parts) - 1, 2, -1) if re.match(r"(?i)mesh[23]d", parts[i])), None)  # >= 3: not a drive
+    if not i:
+        return os.path.splitext(os.path.basename(path))[0]
+    return f"{parts[i - 2]} {skin_folder(path) or parts[i - 1]}"
 
 
 def _layer_collection(lc, coll):
@@ -156,13 +170,13 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
             return {"CANCELLED"}
         if context.mode != "OBJECT":
             bpy.ops.object.mode_set(mode="OBJECT")
-        char_dir = char_dir_from(self.filepath, context.scene.strinova_char_dir)
+        common.remember_fmodel(self.filepath)
         # One collection per character, active for the whole import: UEFormat imports into the active
         # collection and Gacha Setup's rigger names the rig after it and puts its objects and its
         # WGTS_* (control shapes) collection there, so everything lands together.
         vl = context.view_layer
         prev_active = vl.active_layer_collection
-        name = collection_name(self.filepath, char_dir)
+        name = collection_name(self.filepath)
         # paper version (Mesh2D) of a character already in the scene: joins its collection and rig
         existing = bpy.data.collections.get(self.collection or name)
         if existing and not _layer_collection(vl.layer_collection, existing):
@@ -178,7 +192,7 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
         before = set(bpy.data.objects)
         before_colls = set(bpy.data.collections)
         try:
-            result = self._import(context, ext, char_dir, coll, before, host)
+            result = self._import(context, ext, coll, before, host)
         finally:
             gather_leftovers(context, coll, before, before_colls)
             vl.active_layer_collection = prev_active
@@ -195,7 +209,7 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
                 self.report({"WARNING"}, rpt_("{}: this skin has no paper version (Mesh2D)").format(name))
         return result
 
-    def _import(self, context, ext, char_dir, coll, before, host=None):
+    def _import(self, context, ext, coll, before, host=None):
         if ext == ".fbx":
             # leaf bones are the *_end tips Blender adds on FBX export; they are not part of the game skeleton
             bpy.ops.import_scene.fbx(filepath=self.filepath, ignore_leaf_bones=True)
@@ -206,11 +220,14 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
         if not mesh:
             self.report({"ERROR"}, rpt_("The file has no mesh with a skeleton"))
             return {"CANCELLED"}
+        # after the import: the search looks for the textures this model's materials name
+        char_dir = char_dir_from(self.filepath, mesh, context.scene.strinova_char_dir)
         if char_dir:
             context.scene.strinova_char_dir = char_dir
         elif self.do_shading:
             print(f"[Strinova] {os.path.basename(self.filepath)} esta fuera de la exportacion de FModel; "
                   f"se usa la carpeta del panel: {context.scene.strinova_char_dir}")
+        mesh["st_source"] = self.filepath  # the shading prefers textures from this model's own skin folder
         for o in context.view_layer.objects:
             o.select_set(False)
         context.view_layer.objects.active = mesh
@@ -240,7 +257,17 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
         if host:
             paper.ensure_switch(host.find_armature())
         msg = f"{mesh.name}: " + ", ".join(done) + (rpt_(" | failed: {} (see console)").format(", ".join(failed)) if failed else "")
-        self.report({"WARNING" if failed else "INFO"}, msg)
+        miss = mesh.get("st_missing_textures", 0) if "shading" in done else 0
+        if miss:  # the shading's own warning scrolls away behind this message
+            msg += rpt_(" | {} materials without textures: check the Character folder ({})").format(miss, context.scene.strinova_char_dir)
+        # the match model (Mesh3D) usually has no facial expressions; the lobby one (Mesh3DLobby) has them
+        no_face = not paper.is_paper_path(self.filepath) and not mesh.data.shape_keys
+        if no_face:
+            lobby = models_in(os.path.dirname(os.path.dirname(self.filepath)))[0]
+            lobby = lobby if lobby and re.search(r"(?i)mesh3d.*lo", lobby) and os.path.normcase(lobby) != os.path.normcase(self.filepath) else None
+            msg += (rpt_(" | no facial expressions in this model: import the lobby one, {}").format(lobby) if lobby
+                    else rpt_(" | no facial expressions in this model (the lobby model, Mesh3DLobby, usually has them)"))
+        self.report({"WARNING" if failed or miss or no_face else "INFO"}, msg)
         return {"FINISHED"}
 
 

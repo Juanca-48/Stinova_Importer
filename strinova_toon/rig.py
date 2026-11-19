@@ -19,6 +19,44 @@ INERTIA_PROPS = {  # group: (rig property, default influence, panel label)
     "Clothes": ("st_cloth_inertia", 0.32, "Clothes inertia"),
     "Breast": ("st_breast_inertia", 0.2, "Chest inertia"),
 }
+EYEBALLS = ("eye_l_ball_01", "eye_r_ball_01")
+EYE_CHAIN_DIST = 0.025  # m: a physics chain rooted this close to an eyeball's centre lives in the eye
+
+
+def eye_chains(context, rig):
+    """Some skins hang the eye's highlight layer on a short chain inside the eyeball, named like an
+    accessory (Eika S211: earring_l_01/02, 1.4 cm from the eye's centre; eyelashes are elsewhere,
+    outside the physics). Filed as clothes, it followed the head instead of the eye and got inertia:
+    the highlights stayed put when the eyes moved, and wobbled. Hang each such chain from its eyeball
+    and take it out of the physics. Run before apply_inertia, which reads the Hair/Clothes collections."""
+    bones, colls = rig.data.bones, rig.data.collections_all
+    eyes = [n for n in EYEBALLS if n in bones]
+    phys = {b.name for c in PHYS_COLLECTIONS if c in colls for b in colls[c].bones}
+    roots = {}
+    for n in phys:
+        b = bones[n]
+        if b.parent and b.parent.name in phys:
+            continue  # not a chain's first bone
+        eye = min(eyes, key=lambda e: (b.head_local - bones[e].head_local).length, default=None)
+        if eye and (b.head_local - bones[eye].head_local).length < EYE_CHAIN_DIST:
+            roots[n] = eye
+    if not roots:
+        return []
+    context.view_layer.objects.active = rig
+    bpy.ops.object.mode_set(mode="EDIT")
+    eb = rig.data.edit_bones
+    for root, eye in roots.items():
+        eb[root].use_connect = False
+        eb[root].parent = eb[eye]
+    bpy.ops.object.mode_set(mode="OBJECT")
+    for root, eye in roots.items():
+        for b in [bones[root]] + list(bones[root].children_recursive):
+            for c in PHYS_COLLECTIONS:
+                if c in colls:
+                    colls[c].unassign(b)
+            for c in bones[eye].collections:  # hidden with the eyeball ("Other")
+                c.assign(b)
+    return sorted(roots)
 
 
 def apply_inertia(rig):
@@ -187,6 +225,72 @@ def bend_straight_fingers(context, arm):
     return n
 
 
+def fix_thumb_axis(context, rig):
+    """Gacha's rigger lets Rigify infer the thumb's curl axis from how the thumb bends at rest; on some
+    skeletons (Flavia, Eika) that bend points back at the wrist, and closing the thumb folded it
+    towards the arm. Roll the whole thumb chain (controls, ORG, DEF, MCH: they share one axis) so a
+    curl turns the tip across the palm, to the ring and little fingers' base. Run before
+    fix_finger_curl, which picks the curl's sign from these rolls. Only rest frames change: the mesh
+    doesn't move."""
+    context.view_layer.objects.active = rig
+    bpy.ops.object.mode_set(mode="EDIT")
+    eb = rig.data.edit_bones
+    n = 0
+    for s in ("L", "R"):
+        t2, hand = eb.get(f"ORG-thumb.02.{s}"), eb.get(f"DEF-hand.{s}")
+        index, ring, pinky = (eb.get(f"DEF-f_{f}.01.{s}") for f in ("index", "ring", "pinky"))
+        if not (t2 and hand and index and ring and pinky):
+            continue
+        normal = (index.head - hand.head).cross(pinky.head - hand.head).normalized()
+        if normal.z > 0:  # palms face down in the rest pose: the palm side is -Z
+            normal.negate()
+        target = (ring.head + pinky.head) / 2 + normal * (index.head - pinky.head).length * 0.5
+        y = t2.vector.normalized()
+        toward = target - t2.tail
+        toward -= y * toward.dot(y)
+        hinge = y.cross(toward).normalized()  # a positive curl about +X turns +Y towards +Z, the target
+        for b in eb:
+            if re.search(rf"thumb\.0\d.*\.{s}(\.\d+)?$", b.name):
+                yb = b.vector.normalized()
+                h = hinge - yb * hinge.dot(yb)
+                if h.length > 1e-4:
+                    b.align_roll(h.normalized().cross(yb))  # Z = X x Y
+                    n += 1
+    bpy.ops.object.mode_set(mode="OBJECT")
+    return n
+
+
+KNEE_START_BEND = 1.0  # degrees, see fix_leg_axis
+
+
+def fix_leg_axis(context, rig):
+    """Rigify's IK knee only turns about the shin's X axis. Strinova's legs rest almost straight (Eika:
+    knee 1.6 mm off the hip-ankle line), so the inferred axis came out pointing back and the knee bent
+    sideways, outwards (backwards once rolled). Roll the whole thigh/shin chain (controls, ORG, DEF, MCH) so X points sideways
+    and Z back: a positive turn about X swings the foot back, a knee bending forward. Only rest frames
+    change: the mesh doesn't move. Run before fix_controls, which picks the pole angle from these."""
+    context.view_layer.objects.active = rig
+    bpy.ops.object.mode_set(mode="EDIT")
+    n = 0
+    for b in rig.data.edit_bones:
+        if re.search(r"(thigh|shin)(?!_parent|_ik_target)", b.name) and re.search(r"\.[LR](\.\d+)?$", b.name):
+            b.align_roll(Vector((0, 1, 0)))  # the character faces -Y: Z back
+            n += 1
+    bpy.ops.object.mode_set(mode="OBJECT")
+    # the legs rest slightly over-straight (knee behind the line), and the IK kept bending that way:
+    # the knee went backwards. Only a forward bend (positive X) is allowed
+    for s in ("L", "R"):
+        pb = rig.pose.bones.get(f"MCH-shin_ik.{s}")
+        if pb:
+            pb.use_ik_limit_x, pb.ik_min_x, pb.ik_max_x = True, 0.0, math.radians(170)
+            # a straight start leaves the solver stuck at the limit: it starts from this bend instead. Near
+            # straight the bend barely changes the hip-ankle distance, so the standing pose keeps it: 1 degree
+            # (feet ~3.5 mm off at rest) still swings the knee 10 cm forward when the foot rises 5 cm
+            pb.rotation_mode = "XYZ"
+            pb.rotation_euler = (math.radians(KNEE_START_BEND), 0.0, 0.0)
+    return n
+
+
 @contextlib.contextmanager
 def others_aside(context, obj):
     """Gacha's NTE rigger works on the whole scene: it rebinds every mesh's Armature modifier to the
@@ -255,11 +359,19 @@ def others_aside(context, obj):
                 o.hide_set(True, view_layer=vl)
 
 
-HEAD_TARGET, HEAD_TARGET_PARENT = "head-controller", "chest"
+HEAD_TARGET, HEAD_TARGET_PARENTS = "head-controller", ("neck", "chest")  # the first the rig has
 FINGER_MASTER = re.compile(r"(f_\w+|thumb)\.01_master\.[LR]")
 
 
-POLE_PARENT, POLE_DIST = "Chest", 0.4
+POLE_DIST = 0.6  # m from the elbow / knee
+POLES = "IK Poles"  # bone collection of the pole targets and their guide lines: hidden, toggled in the list
+LIMBS = {  # limb: (Rigify bones upper / lower / end, pole parent (None: keep Gacha's), pole side: +Y back,
+    #   -Y front, pole left on)
+    # arms: the pole is set up but left off, so turning upper_arm_ik swings the elbow (Rigify's "Pole"
+    # switch turns it on, already placed and aimed)
+    "arm": (("upper_arm", "forearm", "hand"), "Chest", 1, False),  # elbow target behind
+    "leg": (("thigh", "shin", "foot"), None, -1, True),  # knee target in front (Gacha's parent: Hips)
+}
 SHOULDER_TOGGLE = "Toggle Shoulder Constraints"
 
 
@@ -268,52 +380,97 @@ def _enum_index(pb, prop, name):
     return next((it[4] for it in items if it[1] == name), None)
 
 
-def fix_arm_pole(context, rig, side):
-    """Arms with their elbow pole on. Gacha leaves the pole IK muted, and the pole-less IK twists the
-    arm from the bones' rest (a T-pose) while the character stands in an A-pose: moving the hand,
-    the elbow flew up and out and the arm turned on itself. Here the pole IK takes over (as Rigify's
-    own pole toggle does), its target hangs from the chest right behind the elbow, and its angle is
-    the one that leaves the starting pose as it was."""
+def add_head_target_parent(rig, name):
+    """Add `name` as one more parent of the head's look-at target (head-controller): Gacha's switch
+    offers root, torso and chest, not the neck. Like the others: a target of the SWITCH PARENT
+    Armature constraint, on when parent_switch equals its number (driver), and an item of the enum."""
+    pb, mch = rig.pose.bones.get(HEAD_TARGET), rig.pose.bones.get(f"MCH-{HEAD_TARGET}-parent")
+    con = mch.constraints.get("SWITCH PARENT") if mch else None
+    if not (pb and con and name in rig.pose.bones and "parent_switch" in pb) or _enum_index(pb, "parent_switch", name) is not None:
+        return
+    t = con.targets.new()
+    t.target, t.subtarget = rig, name
+    i = len(con.targets)  # item 0 is "None": target k is item k + 1
+    d = rig.driver_add(f'pose.bones["{mch.name}"].constraints["{con.name}"].targets[{i - 1}].weight').driver
+    d.type, d.expression = "SCRIPTED", f"toggle == {i}"
+    v = d.variables.new()
+    v.name, v.targets[0].id = "toggle", rig
+    v.targets[0].data_path = f'pose.bones["{HEAD_TARGET}"]["parent_switch"]'
+    ui = pb.id_properties_ui("parent_switch")
+    ui.update(items=[tuple(it) for it in ui.as_dict()["items"]] + [(f"P{i}", name, "", 0, i)])  # the whole list: update replaces it
+
+
+def fix_limb_pole(context, rig, limb, side):
+    """Arms and legs with their pole on. Gacha leaves the pole IK muted, and the pole-less IK bends the
+    limb the way its bones bend at rest: the arms rest in a T-pose while the character stands in an
+    A-pose (moving the hand, the elbow flew up and out and the arm turned on itself), and the legs rest
+    almost straight (knee 1.6 mm off the hip-ankle line on Eika), so lifting the foot sent the knee
+    outwards. Here the pole IK takes over (as Rigify's own pole toggle does), its target sits right
+    behind the elbow / in front of the knee, and its angle is the one that leaves the starting pose as
+    it was. The arms' pole is then switched back off (LIMBS): turning upper_arm_ik swings the elbow."""
+    (upper, lower, end), parent, way, pole_on = LIMBS[limb]
     pb = rig.pose.bones
-    joint, par, target = pb.get(f"MCH-forearm_ik.{side}"), pb.get(f"upper_arm_parent.{side}"), pb.get(f"upper_arm_ik_target.{side}")
+    joint, par, target = pb.get(f"MCH-{lower}_ik.{side}"), pb.get(f"{upper}_parent.{side}"), pb.get(f"{upper}_ik_target.{side}")
     cons = [c for c in joint.constraints if c.type == "IK"] if joint else []
     pole = next((c for c in cons if c.pole_target), None)
     if not (pole and par and target and "pole_vector" in par):
         return
     context.view_layer.update()
-    names = (f"DEF-upper_arm.{side}", f"DEF-forearm.{side}", f"DEF-hand.{side}")
-    keep = {n: pb[n].matrix.copy() for n in names}
-    shoulder, elbow, wrist = pb[names[0]].head.copy(), pb[names[1]].head.copy(), pb[names[2]].head.copy()
+    names = (f"DEF-{upper}.{side}", f"DEF-{lower}.{side}", f"DEF-{end}.{side}")
+    # the pose to keep: the arms' A-pose as evaluated (they rest in a T-pose); for the legs, standing is
+    # their rest, and the pole-less IK's pose is the broken one (an FBX import came out twisted 90 degrees)
+    keep = {n: (rig.data.bones[n].matrix_local if limb == "leg" else pb[n].matrix).copy() for n in names}
+    root, joint_at, tip = pb[names[0]].head.copy(), pb[names[1]].head.copy(), pb[names[2]].head.copy()
     for c in cons:
         c.mute = c is not pole
     par["pole_vector"] = True
-    chest = _enum_index(par, "pole_parent", POLE_PARENT)
-    if chest is not None:
-        par["pole_parent"] = chest
+    i = _enum_index(par, "pole_parent", parent) if parent else None
+    if i is not None:
+        par["pole_parent"] = i
     rig.update_tag()
     context.view_layer.update()
-    axis = (wrist - shoulder).normalized()
-    back = Vector((0, 1, 0))  # the character faces -Y
-    back = (back - back.dot(axis) * axis).normalized()
+    axis = (tip - root).normalized()
+    out = Vector((0, way, 0))  # the character faces -Y
+    out = (out - out.dot(axis) * axis).normalized()
     m = target.matrix.copy()
-    m.translation = elbow + back * POLE_DIST
+    m.translation = joint_at + out * POLE_DIST
     target.matrix = m
+    # set and forget: out of the way in their own hidden collection, with Rigify's dashed guide line
+    coll = rig.data.collections_all.get(POLES) or rig.data.collections.new(POLES)
+    coll.is_visible = False
+    for b in (target.bone, rig.data.bones.get(f"VIS_{upper}_ik_pole.{side}")):
+        if b:
+            for c in list(b.collections):
+                c.unassign(b)
+            coll.assign(b)
+
+    # the foot follows its own control, not the pole: on an FBX its fixed offset from rest outweighed
+    # every angle and they all tied
+    measured = names if limb == "arm" else names[:2]
 
     def drift(angle):
         pole.pole_angle = angle
         context.view_layer.update()
-        return max(pb[n].matrix.to_quaternion().rotation_difference(keep[n].to_quaternion()).angle for n in names)
+        return max(pb[n].matrix.to_quaternion().rotation_difference(keep[n].to_quaternion()).angle for n in measured)
 
-    best = min((math.radians(a) for a in range(-180, 180, 5)), key=drift)
-    best = min((best + math.radians(a) / 4 for a in range(-20, 21)), key=drift)
+    # each try re-evaluates the scene (~40 ms): 15-degree sweep, then halve the step around the best (~37 tries, not 114)
+    best, step = min((math.radians(a) for a in range(-180, 180, 15)), key=drift), math.radians(15)
+    while step > math.radians(1):
+        step /= 2
+        best = min((best - step, best, best + step), key=drift)
     drift(best)
+    if not pole_on:
+        par["pole_vector"] = False  # Rigify's drivers swap the IK constraints back
+        rig.update_tag()
+        context.view_layer.update()
 
 
 def fix_controls(context, rig):
     """Gacha defaults that fight the animator (and the automatic shoulder, below):
     - the head's look-at target (head-controller) hangs from root.002, so turning the torso left
-      the head staring at a fixed point and twisting: it now follows the chest (its own parent
-      switch, keeping where it is);
+      the head staring at a fixed point and twisting. It now follows the neck (added to its parent
+      switch, keeping where it is): turning the neck or the torso carries the head, and moving the
+      target still aims it. Under the chest, bending the neck 80 degrees wrung the neck's mesh;
     - a finger master's location is copied to its finger's base, so scaling several to curl
       them (median pivot) also pulled them together and the hand looked smaller: their location
       is locked (they only rotate and scale)."""
@@ -328,13 +485,14 @@ def fix_controls(context, rig):
         settings[SHOULDER_TOGGLE] = 0
         rig.update_tag()
     if rig.name in context.view_layer.objects and rig.mode != "EDIT":
-        for side in ("L", "R"):
-            fix_arm_pole(context, rig, side)
+        for limb in LIMBS:
+            for side in ("L", "R"):
+                fix_limb_pole(context, rig, limb, side)
     pb = rig.pose.bones.get(HEAD_TARGET)
     if not pb or "parent_switch" not in pb:
         return
-    items = pb.id_properties_ui("parent_switch").as_dict().get("items", [])
-    idx = next((it[4] for it in items if it[1] == HEAD_TARGET_PARENT), None)
+    add_head_target_parent(rig, HEAD_TARGET_PARENTS[0])
+    idx = next((i for i in (_enum_index(pb, "parent_switch", n) for n in HEAD_TARGET_PARENTS) if i is not None), None)
     if idx is None or pb["parent_switch"] == idx:
         return
     # only an evaluated pose can be read and written back: a rig in an excluded collection or in
@@ -394,9 +552,12 @@ class STRINOVA_OT_rig(bpy.types.Operator):
             for b in rig.data.bones:
                 if b.name.startswith("DEF-"):
                     b.bbone_segments = 1
+            fix_thumb_axis(context, rig)
+            fix_leg_axis(context, rig)  # knees bent sideways
             fix_finger_curl(rig)
             fix_breasts(context, rig)
             face.add_gaze(context, rig)
+            eye_chains(context, rig)  # eye highlights filed as clothes (Eika S211)
             face.add_blink(context, rig, obj)  # before arrange_face, which lays its slider out
             face.arrange_face(context, rig, obj)
             face.add_face_bones(rig, obj)

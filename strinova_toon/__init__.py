@@ -2,7 +2,7 @@
 bl_info = {
     "name": "Strinova Toon Setup",
     "author": "juanc",
-    "version": (1, 1, 1),
+    "version": (1, 1, 2),
     "blender": (5, 2, 0),
     "location": "3D View > Sidebar (N) > Strinova",
     "description": "Imports Strinova characters (FModel) with toon shading, rig and constraint-based physics",
@@ -85,7 +85,20 @@ class STRINOVA_PT_panel(bpy.types.Panel):
             col.label(text="Select the mesh or its armature", icon="INFO")
 
 
-classes = importer.classes + weapon.classes + shading.classes + rig.classes + (STRINOVA_PT_panel,)
+class STRINOVA_AddonPreferences(bpy.types.AddonPreferences):
+    bl_idname = __name__
+
+    fmodel_dir: bpy.props.StringProperty(
+        name="FModel export folder", subtype="DIR_PATH",
+        description="FModel's export with the game's textures (the folder holding SkinAssets, or SkinAssets itself). "
+                    "Filled in by itself the first time you import from it. Used when a model elsewhere (an .fbx, a "
+                    "weapon) has no textures near it")
+
+    def draw(self, context):
+        self.layout.prop(self, "fmodel_dir")
+
+
+classes = importer.classes + weapon.classes + shading.classes + rig.classes + (STRINOVA_PT_panel, STRINOVA_AddonPreferences)
 
 
 def register():
@@ -103,7 +116,8 @@ def register():
     bpy.types.Scene.strinova_char_dir = bpy.props.StringProperty(
         name="Character folder",
         subtype="DIR_PATH",
-        default=r"D:\Programas\Fmodel\Output\Exports\PM\Content\PaperMan\SkinAssets\Characters\Kanami",
+        description="Folder with the character's textures and material JSONs (FModel's Characters\\<Name>). "
+                    "Filled on import from the model's path",
     )
 
 

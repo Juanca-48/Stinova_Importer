@@ -82,14 +82,25 @@ def assembly(path, sight):
     return [body] + pieces
 
 
-def assets_root(path, char_dir):
-    """FModel's SkinAssets folder (weapon textures and materials in Weapons, the metal matcap in
-    Characters/PBR): from the model's own path, or from the panel's character folder for an FBX."""
-    for p in (path, char_dir):
-        parts = os.path.normpath(bpy.path.abspath(p)).split(os.sep) if p else []
-        if "SkinAssets" in parts:
-            return os.sep.join(parts[: parts.index("SkinAssets") + 1])
-    return None
+def assets_root(path, char_dir, meshes=()):
+    """Where a weapon's textures (and material JSONs) are: FModel's SkinAssets folder if the model is in
+    it (weapon textures in Weapons, the metal matcap in Characters/PBR); else, like a character, the
+    nearest folder around the model holding the textures its materials name in the bundled table (a
+    weapon missing from it: its material JSONs); else SkinAssets from the panel's character folder or
+    from the FModel export remembered in the preferences."""
+    def in_skin_assets(p):
+        return p and "SkinAssets" in os.path.normpath(bpy.path.abspath(p)).split(os.sep)
+
+    if in_skin_assets(path):
+        return common.skin_assets(path)
+    names = set().union(*(shading.texture_names(m, weapon=True) for m in meshes))
+    mats = {re.sub(r"\.\d{3}$", "", s.material.name).lower() for m in meshes for s in m.material_slots
+            if s.material and not s.material.name.endswith(shading.OUTLINE_SUFFIX)}
+    # never "any PNG": climbing from a weapon folder would stop at the characters' textures
+    found = shading.texture_root(path, names) if names else shading.texture_root(path, mats, ".json") if mats else None
+    if found:
+        return found
+    return common.skin_assets(char_dir) if in_skin_assets(char_dir) else common.fmodel_root()
 
 
 def import_file(path):
@@ -664,6 +675,7 @@ class STRINOVA_OT_import_weapon(bpy.types.Operator, ImportHelper):
         if any(f.lower().endswith(".uemodel") for f in files) and not hasattr(bpy.types, "UF_OT_import_uemodel"):
             self.report({"ERROR"}, rpt_("UEFormat is not enabled: enable it or import the weapon as .fbx"))
             return {"CANCELLED"}
+        common.remember_fmodel(files[0])
         # light the weapon like the selected character (its sun and colours), else with its own sun
         host = common.target_mesh(context)
         if host and host.get("st_weapon"):  # a weapon selected: the character that lights it
@@ -707,22 +719,25 @@ class STRINOVA_OT_import_weapon(bpy.types.Operator, ImportHelper):
         for o in vl.objects:
             o.select_set(False)
         meshes = [o for o in new if o.type == "MESH"]
-        shaded = ""
+        shaded, miss = "", []
         if meshes and context.scene.strinova_do_shading:
-            root = assets_root(files[0], context.scene.strinova_char_dir)
+            root = assets_root(files[0], context.scene.strinova_char_dir, meshes)
             if root:
                 report = shading.shade_weapon(context, meshes, root, host)
                 for k, v in report.items():
                     print(f"[Strinova] {k}: {v}")
                 done = sum(isinstance(v, dict) for v in report.values())
                 shaded = rpt_(", {}/{} materials").format(done, len(report)) + (rpt_(", lit by {}").format(host.name) if host else "")
+                miss = shading.missing_textures(report)
+                if miss:
+                    shaded += rpt_(" | {} materials without textures: not found in {}").format(len(miss), root)
             else:
-                shaded = rpt_(", no shading: FModel's SkinAssets folder not found (check the character folder)")
+                shaded = rpt_(", no shading: FModel's SkinAssets folder not found (set it in the add-on's preferences)")
         for o in meshes:
             o.select_set(True)
         vl.objects.active = meshes[0] if meshes else new[0]
         extra = rpt_(", with {}").format(rpt_(" and ").join(rpt_(k) for k in hung)) if hung else ""
-        self.report({"INFO"}, rpt_("{}: {} mesh(es){}, {} controls{}").format(coll.name, len(meshes), extra, controls, shaded))
+        self.report({"WARNING" if miss else "INFO"}, rpt_("{}: {} mesh(es){}, {} controls{}").format(coll.name, len(meshes), extra, controls, shaded))
         return {"FINISHED"}
 
 
