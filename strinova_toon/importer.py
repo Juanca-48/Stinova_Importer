@@ -11,6 +11,13 @@ def char_dir_from(path, current=""):
     parts = os.path.normpath(path).split(os.sep)
     if "Characters" in parts and parts.index("Characters") + 1 < len(parts) - 1:
         return os.sep.join(parts[: parts.index("Characters") + 2])
+    # a <Name>/<Skin>/Mesh3D/... tree that carries its own textures (tools/link_uemodel_textures.py):
+    # its <Name> folder, whatever the panel points at
+    i = next((i for i in range(len(parts) - 1, 1, -1) if re.match(r"(?i)mesh[23]d", parts[i])), None)
+    if i:
+        own = os.sep.join(parts[: i - 1])
+        if any(f.lower().endswith(".png") for _, _, fs in os.walk(own) for f in fs):
+            return own
     # FBX kept outside the FModel export in a <Name>/<Skin>/... tree: textures and material JSONs
     # stay in FModel's export, so take <Name>'s folder next to the one already set in the panel
     chars_root = os.path.dirname(os.path.normpath(current)) if current else ""
@@ -211,6 +218,7 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
         elif self.do_shading:
             print(f"[Strinova] {os.path.basename(self.filepath)} esta fuera de la exportacion de FModel; "
                   f"se usa la carpeta del panel: {context.scene.strinova_char_dir}")
+        mesh["st_source"] = self.filepath  # the shading prefers textures from this model's own skin folder
         for o in context.view_layer.objects:
             o.select_set(False)
         context.view_layer.objects.active = mesh
@@ -240,7 +248,17 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
         if host:
             paper.ensure_switch(host.find_armature())
         msg = f"{mesh.name}: " + ", ".join(done) + (rpt_(" | failed: {} (see console)").format(", ".join(failed)) if failed else "")
-        self.report({"WARNING" if failed else "INFO"}, msg)
+        miss = mesh.get("st_missing_textures", 0) if "shading" in done else 0
+        if miss:  # the shading's own warning scrolls away behind this message
+            msg += rpt_(" | {} materials without textures: check the Character folder ({})").format(miss, context.scene.strinova_char_dir)
+        # the match model (Mesh3D) usually has no facial expressions; the lobby one (Mesh3DLobby) has them
+        no_face = not paper.is_paper_path(self.filepath) and not mesh.data.shape_keys
+        if no_face:
+            lobby = models_in(os.path.dirname(os.path.dirname(self.filepath)))[0]
+            lobby = lobby if lobby and re.search(r"(?i)mesh3d.*lo", lobby) and os.path.normcase(lobby) != os.path.normcase(self.filepath) else None
+            msg += (rpt_(" | no facial expressions in this model: import the lobby one, {}").format(lobby) if lobby
+                    else rpt_(" | no facial expressions in this model (the lobby model, Mesh3DLobby, usually has them)"))
+        self.report({"WARNING" if failed or miss or no_face else "INFO"}, msg)
         return {"FINISHED"}
 
 

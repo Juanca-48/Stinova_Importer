@@ -135,8 +135,10 @@ They are also in the rig's Object Properties > Custom Properties.
   straight through doesn't give the same as jumping to a frame, and a render
   of single frames can differ from the viewport.
 - Head follow: the head aims at the "head-controller" control in front of
-  the face. Turn it off with "Use Head Controller" on the gear above the
-  head (plate-settings).
+  the face. The control follows the neck: turning the neck or the torso
+  carries the head, and moving the control aims it. Its parent can be
+  changed in the rig's panel (parent_switch). Turn it off with "Use Head
+  Controller" on the gear above the head (plate-settings).
 - Gacha Setup's automatic shoulder is off: it twisted the upper arm when
   moving the hand. Turn it back on with "Toggle Shoulder Constraints" in
   plate-settings.

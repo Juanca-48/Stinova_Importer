@@ -14,14 +14,37 @@ SHADOW_TINT = (0.80, 0.70, 0.82, 1.0)
 
 
 # ---------- file lookup ----------
-def index_files(root, ext):
+def index_files(root, ext, prefer=None):
+    """{lower-case file name without extension: [paths]}. Paths under `prefer` (the model's own skin
+    folder) go first: a tree renamed by skin name has no Sxxx in its paths for pick() to match."""
     idx = {}
     for d, _, files in os.walk(root):
         for f in files:
             if f.lower().endswith(ext):
                 # case-insensitive: JSONs say T_Aika_body_1_D for the file T_Aika_Body_1_D.png
                 idx.setdefault(os.path.splitext(f)[0].lower(), []).append(os.path.join(d, f))
+    if prefer:
+        prefer = os.path.normcase(os.path.normpath(prefer)) + os.sep
+        for paths in idx.values():
+            paths.sort(key=lambda p: not os.path.normcase(p).startswith(prefer))
     return idx
+
+
+MISSING = "falta textura: "  # report entry of a material whose texture file isn't in the folder
+
+
+def missing_textures(report):
+    """Materials of a shading report left untouched because their texture file wasn't found."""
+    return [k for k, v in report.items() if isinstance(v, str) and v.startswith(MISSING)]
+
+
+def source_skin_dir(obj):
+    """The skin folder of the model file an object was imported from (the folder holding Mesh2D /
+    Mesh3D*), or None."""
+    src = obj.get("st_source")
+    parts = os.path.normpath(src).split(os.sep) if src else []
+    i = next((i for i in range(len(parts) - 1, 0, -1) if re.match(r"(?i)mesh[23]d", parts[i])), None)
+    return os.sep.join(parts[:i]) if i else None
 
 
 def pick(idx, name, skin):
@@ -184,8 +207,9 @@ def shader_out(nt, color, alpha, out_node, x, y):
 
 
 # ---------- node groups ----------
-GROUP_VERSION = 2  # bump when a group changes; 2 = colours and light objects per character (and the outline
-#   group's first version mark: older unmarked ST Outline groups, without the no-COL0 fallback, get rebuilt)
+GROUP_VERSION = 3  # bump when a group changes; 2 = colours and light objects per character (and the outline
+#   group's first version mark: older unmarked ST Outline groups, without the no-COL0 fallback, get rebuilt);
+#   3 = matcap UV without Vector Transform (broken in Blender 5.3)
 
 
 def shared_group(name, typ, version=None):
@@ -201,6 +225,49 @@ def shared_group(name, typ, version=None):
     ng = bpy.data.node_groups.new(name, typ)
     ng["st_version"] = version
     return ng, False
+
+
+def matcap_uv(nt, N, x, y):
+    """MatCap UV: the normal N seen from the viewer, in 0..1. Built from the view direction (Geometry >
+    Incoming) instead of a Vector Transform World -> Camera: in Blender 5.3 that node returns a constant,
+    and the whole character took one colour of the matcap (a pink tint from some angles)."""
+    geo = node(nt, "ShaderNodeNewGeometry", x, y - 150)
+    fwd = node(nt, "ShaderNodeVectorMath", x + 180, y - 150, operation="SCALE")
+    nt.links.new(geo.outputs["Incoming"], fwd.inputs[0])
+    fwd.inputs["Scale"].default_value = -1.0  # Incoming points at the viewer: the view looks the other way
+    side = node(nt, "ShaderNodeVectorMath", x + 360, y - 150, operation="CROSS_PRODUCT")
+    nt.links.new(fwd.outputs[0], side.inputs[0])
+    side.inputs[1].default_value = (0.0, 0.0, 1.0)
+    right = vmath(nt, "NORMALIZE", side.outputs[0], None, x + 540, y - 150)
+    up = vmath(nt, "CROSS_PRODUCT", right.outputs[0], fwd.outputs[0], x + 540, y - 300)
+    u = vmath(nt, "DOT_PRODUCT", N, right.outputs[0], x + 720, y - 150).outputs["Value"]
+    v = vmath(nt, "DOT_PRODUCT", N, up.outputs[0], x + 720, y - 300).outputs["Value"]
+    comb = node(nt, "ShaderNodeCombineXYZ", x + 900, y - 200)
+    nt.links.new(u, comb.inputs[0])
+    nt.links.new(v, comb.inputs[1])
+    ma = node(nt, "ShaderNodeVectorMath", x + 1080, y - 200, operation="MULTIPLY_ADD")
+    nt.links.new(comb.outputs[0], ma.inputs[0])
+    ma.inputs[1].default_value = (0.5, 0.5, 0.5)
+    ma.inputs[2].default_value = (0.5, 0.5, 0.0)
+    return ma.outputs[0]
+
+
+def matcap_quadrant(nt, uv, mask, x, y):
+    """MatCap UV into one quarter of a 4-matcap atlas (NeedMatCap4text): Mask1's red channel picks it,
+    in four steps (0-0.25 top left, then top right, bottom left, bottom right; Unreal reads textures
+    from the top). Checked against the game on Eika S211: cloth, skin and satin get their own matcap."""
+    sep = node(nt, "ShaderNodeSeparateColor", x, y)
+    nt.links.new(mask.outputs["Color"], sep.inputs[0])
+    idx = math(nt, "MINIMUM", math(nt, "FLOOR", math(nt, "MULTIPLY", sep.outputs[0], 4.0, x + 180, y), None, x + 360, y), 3.0, x + 540, y)
+    col = math(nt, "MODULO", idx, 2.0, x + 720, y)  # 0 left, 1 right
+    row = math(nt, "FLOOR", math(nt, "DIVIDE", idx, 2.0, x + 720, y - 150), None, x + 900, y - 150)  # 0 top, 1 bottom
+    off = node(nt, "ShaderNodeCombineXYZ", x + 1080, y - 50)
+    nt.links.new(math(nt, "MULTIPLY", col, 0.5, x + 900, y), off.inputs[0])
+    nt.links.new(math(nt, "SUBTRACT", 0.5, math(nt, "MULTIPLY", row, 0.5, x + 1080, y - 150), x + 1260, y - 150), off.inputs[1])  # V grows up
+    half = node(nt, "ShaderNodeVectorMath", x + 1080, y + 150, operation="SCALE")
+    nt.links.new(uv, half.inputs[0])
+    half.inputs["Scale"].default_value = 0.5
+    return vmath(nt, "ADD", half.outputs[0], off.outputs[0], x + 1440, y).outputs[0]
 
 
 def build_toon_group():
@@ -228,13 +295,7 @@ def build_toon_group():
         ndl = vmath(nt, "DOT_PRODUCT", N, L, -400, 200).outputs["Value"]
         lit = soft_step(nt, ndl, gi.outputs["Middle Value"], gi.outputs["Softness"], -200, 200)
     with section(nt, "MatCap UV (camera-space normal)", "tex"):
-        vt = node(nt, "ShaderNodeVectorTransform", -400, -250, vector_type="NORMAL", convert_from="WORLD", convert_to="CAMERA")
-        nt.links.new(N, vt.inputs[0])
-        ma = node(nt, "ShaderNodeVectorMath", -200, -250, operation="MULTIPLY_ADD")
-        nt.links.new(vt.outputs[0], ma.inputs[0])
-        ma.inputs[1].default_value = (0.5, 0.5, 0.5)
-        ma.inputs[2].default_value = (0.5, 0.5, 0.5)
-        nt.links.new(ma.outputs[0], go.inputs["MatCap UV"])
+        nt.links.new(matcap_uv(nt, N, -500, -250), go.inputs["MatCap UV"])
     col = toon_mix(nt, lit, gi.outputs["Base Color"], gi.outputs["Shadow Tint"], 100, 100)
     with section(nt, "MatCap and emission", "color"):
         col = mix_rgb(nt, "ADD", gi.outputs["MatCap Pow"], col, gi.outputs["MatCap"], 450, 100)
@@ -437,6 +498,8 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
         # (MI_Toon_EyeShadow, dark grey at 45%)
         if cols.get("BaseColor") and props.get("BlendMode") == "BLEND_Translucent":
             glass_material(mat, cols["BaseColor"], sca.get("Opacity", 0.5), report)
+        elif t.get("BaseMap"):
+            report[mat.name] = MISSING + t["BaseMap"]
         else:
             report[mat.name] = "sin BaseMap, se deja igual"
         return
@@ -474,8 +537,18 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
         if nrm_p:
             used.append(os.path.basename(nrm_p))
         mc_p = pick(tex_idx, t.get("MatCapTexture", ""), skin) if sw.get("NeedMatCap") else None
-        if mc_p:
-            mc = tex(nt, mc_p, "sRGB", -200, -450, g_uv.outputs["MatCap UV"])
+        # a 4-matcap atlas needs Mask1 to pick each pixel's quarter; without it the whole atlas would
+        # tint the character, so no matcap
+        atlas = sw.get("NeedMatCap4text")
+        mask_p = pick(tex_idx, t.get("Mask1", ""), skin) if mc_p and atlas else None
+        if mc_p and (mask_p or not atlas):
+            uv = g_uv.outputs["MatCap UV"]
+            if mask_p:
+                mask = tex(nt, mask_p, "Non-Color", -900, -700)
+                mask.interpolation = "Closest"  # its steps are matcap indices: no blending across them
+                uv = matcap_quadrant(nt, uv, mask, -700, -700)
+                used.append(os.path.basename(mask_p))
+            mc = tex(nt, mc_p, "sRGB", -200, -450, uv)
             nt.links.new(mc.outputs["Color"], g.inputs["MatCap"])
             g.inputs["MatCap Pow"].default_value = sca.get("MatCapPow", 0.0)
             used.append(os.path.basename(mc_p))
@@ -887,8 +960,9 @@ def bundled_material(name, skin, char_dir):
 def run(obj, char_dir):
     arm = obj.find_armature()
     mesh_skin = skin_of(obj.name, "")
-    tex_idx = index_files(char_dir, ".png")
-    json_idx = index_files(char_dir, ".json")
+    own = source_skin_dir(obj)
+    tex_idx = index_files(char_dir, ".png", own)
+    json_idx = index_files(char_dir, ".json", own)
     sun, emp = ensure_rig(obj, arm)
     ensure_lighting_panel(bpy.context, obj)  # after ensure_rig: it aims the sun with the sun handle
     toon_g, face_g = build_toon_group(), build_face_group()
@@ -924,7 +998,7 @@ def run(obj, char_dir):
 # blackened those skins. Here they get the characters' toon (same sun, same panel colours) so a weapon
 # matches the hand that holds it, plus a matcap shine where RMO marks polished metal.
 WEAPON_CLIP = 0.3333  # OpacityMaskClipValue of the weapon materials
-WEAPON_VERSION = 3  # its own version: 3 = RMO read as emissive / roughness / metal
+WEAPON_VERSION = 4  # its own version: 3 = RMO read as emissive / roughness / metal; 4 = matcap UV without Vector Transform
 
 
 def build_weapon_group():
@@ -953,12 +1027,7 @@ def build_weapon_group():
         ndl = vmath(nt, "DOT_PRODUCT", N, L, -400, 200).outputs["Value"]
         lit = soft_step(nt, ndl, gi.outputs["Middle Value"], gi.outputs["Softness"], -200, 200)
     with section(nt, "MatCap UV (camera-space normal)", "tex"):
-        vt = node(nt, "ShaderNodeVectorTransform", -400, -250, vector_type="NORMAL", convert_from="WORLD", convert_to="CAMERA")
-        nt.links.new(N, vt.inputs[0])
-        ma = node(nt, "ShaderNodeVectorMath", -200, -250, operation="MULTIPLY_ADD")
-        nt.links.new(vt.outputs[0], ma.inputs[0])
-        ma.inputs[1].default_value = ma.inputs[2].default_value = (0.5, 0.5, 0.5)
-        nt.links.new(ma.outputs[0], go.inputs["MatCap UV"])
+        nt.links.new(matcap_uv(nt, N, -500, -250), go.inputs["MatCap UV"])
     with section(nt, "RMO: R emission, G roughness, B metal", "tex"):
         rmo = node(nt, "ShaderNodeSeparateColor", -400, -450)
         nt.links.new(gi.outputs["RMO"], rmo.inputs[0])
@@ -987,6 +1056,8 @@ def setup_weapon_material(mat, data, tex_idx, weapon_group, report):
         tint = data.get("Colors", {}).get("BaseColorTint")
         if tint and props.get("BlendMode") == "BLEND_Translucent":
             glass_material(mat, tint, data.get("Scalars", {}).get("OpacityScale", 0.5), report)
+        elif any(t.get(k) for k in ("PM_Diffuse", "BaseColor_LOW", "BaseMap")):
+            report[mat.name] = MISSING + next(t[k] for k in ("PM_Diffuse", "BaseColor_LOW", "BaseMap") if t.get(k))
         else:
             report[mat.name] = "sin textura de color, se deja igual"
         return
@@ -1163,7 +1234,13 @@ class STRINOVA_OT_setup(bpy.types.Operator):
         for k, v in report.items():
             print(f"[Strinova] {k}: {v}")
         done = sum(isinstance(v, dict) for v in report.values())
-        self.report({"INFO"}, rpt_("{}/{} materials set up (details in the console)").format(done, len(report)))
+        miss = missing_textures(report)
+        obj["st_missing_textures"] = len(miss)  # the importer repeats the warning in its own message
+        if miss:
+            self.report({"WARNING"}, rpt_("{} of {} materials without textures (e.g. {}): not found in {}. "
+                                          "Check the Character folder").format(len(miss), len(report), miss[0], char_dir))
+        else:
+            self.report({"INFO"}, rpt_("{}/{} materials set up (details in the console)").format(done, len(report)))
         return {"FINISHED"}
 
 

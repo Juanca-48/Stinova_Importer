@@ -19,6 +19,44 @@ INERTIA_PROPS = {  # group: (rig property, default influence, panel label)
     "Clothes": ("st_cloth_inertia", 0.32, "Clothes inertia"),
     "Breast": ("st_breast_inertia", 0.2, "Chest inertia"),
 }
+EYEBALLS = ("eye_l_ball_01", "eye_r_ball_01")
+EYE_CHAIN_DIST = 0.025  # m: a physics chain rooted this close to an eyeball's centre lives in the eye
+
+
+def eye_chains(context, rig):
+    """Some skins hang the eye's highlight layer on a short chain inside the eyeball, named like an
+    accessory (Eika S211: earring_l_01/02, 1.4 cm from the eye's centre; eyelashes are elsewhere,
+    outside the physics). Filed as clothes, it followed the head instead of the eye and got inertia:
+    the highlights stayed put when the eyes moved, and wobbled. Hang each such chain from its eyeball
+    and take it out of the physics. Run before apply_inertia, which reads the Hair/Clothes collections."""
+    bones, colls = rig.data.bones, rig.data.collections_all
+    eyes = [n for n in EYEBALLS if n in bones]
+    phys = {b.name for c in PHYS_COLLECTIONS if c in colls for b in colls[c].bones}
+    roots = {}
+    for n in phys:
+        b = bones[n]
+        if b.parent and b.parent.name in phys:
+            continue  # not a chain's first bone
+        eye = min(eyes, key=lambda e: (b.head_local - bones[e].head_local).length, default=None)
+        if eye and (b.head_local - bones[eye].head_local).length < EYE_CHAIN_DIST:
+            roots[n] = eye
+    if not roots:
+        return []
+    context.view_layer.objects.active = rig
+    bpy.ops.object.mode_set(mode="EDIT")
+    eb = rig.data.edit_bones
+    for root, eye in roots.items():
+        eb[root].use_connect = False
+        eb[root].parent = eb[eye]
+    bpy.ops.object.mode_set(mode="OBJECT")
+    for root, eye in roots.items():
+        for b in [bones[root]] + list(bones[root].children_recursive):
+            for c in PHYS_COLLECTIONS:
+                if c in colls:
+                    colls[c].unassign(b)
+            for c in bones[eye].collections:  # hidden with the eyeball ("Other")
+                c.assign(b)
+    return sorted(roots)
 
 
 def apply_inertia(rig):
@@ -255,7 +293,7 @@ def others_aside(context, obj):
                 o.hide_set(True, view_layer=vl)
 
 
-HEAD_TARGET, HEAD_TARGET_PARENT = "head-controller", "chest"
+HEAD_TARGET, HEAD_TARGET_PARENTS = "head-controller", ("neck", "chest")  # the first the rig has
 FINGER_MASTER = re.compile(r"(f_\w+|thumb)\.01_master\.[LR]")
 
 
@@ -266,6 +304,26 @@ SHOULDER_TOGGLE = "Toggle Shoulder Constraints"
 def _enum_index(pb, prop, name):
     items = pb.id_properties_ui(prop).as_dict().get("items", [])
     return next((it[4] for it in items if it[1] == name), None)
+
+
+def add_head_target_parent(rig, name):
+    """Add `name` as one more parent of the head's look-at target (head-controller): Gacha's switch
+    offers root, torso and chest, not the neck. Like the others: a target of the SWITCH PARENT
+    Armature constraint, on when parent_switch equals its number (driver), and an item of the enum."""
+    pb, mch = rig.pose.bones.get(HEAD_TARGET), rig.pose.bones.get(f"MCH-{HEAD_TARGET}-parent")
+    con = mch.constraints.get("SWITCH PARENT") if mch else None
+    if not (pb and con and name in rig.pose.bones and "parent_switch" in pb) or _enum_index(pb, "parent_switch", name) is not None:
+        return
+    t = con.targets.new()
+    t.target, t.subtarget = rig, name
+    i = len(con.targets)  # item 0 is "None": target k is item k + 1
+    d = rig.driver_add(f'pose.bones["{mch.name}"].constraints["{con.name}"].targets[{i - 1}].weight').driver
+    d.type, d.expression = "SCRIPTED", f"toggle == {i}"
+    v = d.variables.new()
+    v.name, v.targets[0].id = "toggle", rig
+    v.targets[0].data_path = f'pose.bones["{HEAD_TARGET}"]["parent_switch"]'
+    ui = pb.id_properties_ui("parent_switch")
+    ui.update(items=[tuple(it) for it in ui.as_dict()["items"]] + [(f"P{i}", name, "", 0, i)])  # the whole list: update replaces it
 
 
 def fix_arm_pole(context, rig, side):
@@ -312,8 +370,9 @@ def fix_arm_pole(context, rig, side):
 def fix_controls(context, rig):
     """Gacha defaults that fight the animator (and the automatic shoulder, below):
     - the head's look-at target (head-controller) hangs from root.002, so turning the torso left
-      the head staring at a fixed point and twisting: it now follows the chest (its own parent
-      switch, keeping where it is);
+      the head staring at a fixed point and twisting. It now follows the neck (added to its parent
+      switch, keeping where it is): turning the neck or the torso carries the head, and moving the
+      target still aims it. Under the chest, bending the neck 80 degrees wrung the neck's mesh;
     - a finger master's location is copied to its finger's base, so scaling several to curl
       them (median pivot) also pulled them together and the hand looked smaller: their location
       is locked (they only rotate and scale)."""
@@ -333,8 +392,8 @@ def fix_controls(context, rig):
     pb = rig.pose.bones.get(HEAD_TARGET)
     if not pb or "parent_switch" not in pb:
         return
-    items = pb.id_properties_ui("parent_switch").as_dict().get("items", [])
-    idx = next((it[4] for it in items if it[1] == HEAD_TARGET_PARENT), None)
+    add_head_target_parent(rig, HEAD_TARGET_PARENTS[0])
+    idx = next((i for i in (_enum_index(pb, "parent_switch", n) for n in HEAD_TARGET_PARENTS) if i is not None), None)
     if idx is None or pb["parent_switch"] == idx:
         return
     # only an evaluated pose can be read and written back: a rig in an excluded collection or in
@@ -397,6 +456,7 @@ class STRINOVA_OT_rig(bpy.types.Operator):
             fix_finger_curl(rig)
             fix_breasts(context, rig)
             face.add_gaze(context, rig)
+            eye_chains(context, rig)  # eye highlights filed as clothes (Eika S211)
             face.add_blink(context, rig, obj)  # before arrange_face, which lays its slider out
             face.arrange_face(context, rig, obj)
             face.add_face_bones(rig, obj)

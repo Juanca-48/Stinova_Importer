@@ -135,8 +135,10 @@ También están en Object Properties > Custom Properties del rig.
   Reproducir de corrido no da lo mismo que saltar a un fotograma, y un render
   de fotogramas sueltos puede diferir del viewport.
 - Seguidor de cabeza: la cabeza apunta al control "head-controller" delante
-  de la cara. Se apaga con "Use Head Controller" en el engranaje sobre la
-  cabeza (plate-settings).
+  de la cara. El control sigue al cuello: girar el cuello o el torso lleva
+  la cabeza, y mover el control la orienta. Su padre se cambia en el panel
+  del rig (parent_switch). Se apaga con "Use Head Controller" en el
+  engranaje sobre la cabeza (plate-settings).
 - El hombro automático de Gacha Setup está apagado: retorcía el brazo
   superior al mover la mano. Se vuelve a encender con "Toggle Shoulder
   Constraints" en plate-settings.

@@ -707,7 +707,7 @@ class STRINOVA_OT_import_weapon(bpy.types.Operator, ImportHelper):
         for o in vl.objects:
             o.select_set(False)
         meshes = [o for o in new if o.type == "MESH"]
-        shaded = ""
+        shaded, miss = "", []
         if meshes and context.scene.strinova_do_shading:
             root = assets_root(files[0], context.scene.strinova_char_dir)
             if root:
@@ -716,13 +716,16 @@ class STRINOVA_OT_import_weapon(bpy.types.Operator, ImportHelper):
                     print(f"[Strinova] {k}: {v}")
                 done = sum(isinstance(v, dict) for v in report.values())
                 shaded = rpt_(", {}/{} materials").format(done, len(report)) + (rpt_(", lit by {}").format(host.name) if host else "")
+                miss = shading.missing_textures(report)
+                if miss:
+                    shaded += rpt_(" | {} materials without textures: not found in {}").format(len(miss), root)
             else:
                 shaded = rpt_(", no shading: FModel's SkinAssets folder not found (check the character folder)")
         for o in meshes:
             o.select_set(True)
         vl.objects.active = meshes[0] if meshes else new[0]
         extra = rpt_(", with {}").format(rpt_(" and ").join(rpt_(k) for k in hung)) if hung else ""
-        self.report({"INFO"}, rpt_("{}: {} mesh(es){}, {} controls{}").format(coll.name, len(meshes), extra, controls, shaded))
+        self.report({"WARNING" if miss else "INFO"}, rpt_("{}: {} mesh(es){}, {} controls{}").format(coll.name, len(meshes), extra, controls, shaded))
         return {"FINISHED"}
 
 
