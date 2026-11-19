@@ -17,16 +17,17 @@ Spanish guide: INSTRUCCIONES.txt.
 1. REQUIREMENTS
 ---------------
 
-- Blender 5.2.
+- Blender 5.2 or 5.3.
 - Gacha Setup (the "setup_wizard" add-on): required to generate the rig.
   https://github.com/PaoloESAN/gacha-setup/releases
 - UEFormat v10 or later: only to import .uemodel files.
   Not needed for .fbx.
   https://github.com/h4lfheart/UEFormat
-- For the toon shading, the character's textures (.png), in a folder named
-  after it (for example ...\Kanami\, with its skins inside, like the one
-  FModel exports). Each material's data (which texture goes in each channel,
-  shine, transparency...) is already bundled with the add-on
+- For the toon shading, the textures (.png) with the game's file names,
+  next to the model or in a folder above it (for example FModel's export,
+  ...\Kanami\ with its skins inside). The add-on finds them by itself.
+  Each material's data, characters and weapons (which texture goes in each
+  channel, shine, transparency...), is already bundled with the add-on
   (strinova_toon\materials.json), so FModel's .json files are not needed.
   If the folder does have the .json files, those are used (in case they are
   newer).
@@ -72,13 +73,21 @@ The panel is in the 3D viewport, "Strinova" tab (N key).
     * Apply Toon Shading: materials, lighting and outline.
     * Generate rig: rig with Gacha Setup, face controls and physics.
     * Include paper version: also brings the skin's paper version.
-- "Character folder": FModel's export folder with textures and materials.
-  It fills itself in when importing from FModel. You only need to set it
-  when importing an .fbx saved somewhere else: the add-on recognizes the
-  character by its folder names (.../<Character>/<Skin>/Mesh3D/...) and looks
-  for its textures in FModel's export.
+- "Character folder": where the textures (and FModel's .json files) are
+  taken from. It fills itself in on import, you don't need to set it first:
+    * from FModel's export, it is the character's folder (...\Characters\<Name>);
+    * anywhere else (an .fbx, another export), the add-on looks for the
+      model's textures in its own folder first and then in the folders above
+      it (up to 4 levels), and keeps the nearest one that has them.
+  Only if they are nowhere near the model does it look for the character in
+  FModel's export (the "FModel export folder" of the add-on's preferences)
+  or use the folder already in the panel: set it to the folder with the
+  textures and import again.
+  The search never walks a whole drive or very large folders (your user
+  folder, for example), so keep the textures near the model.
 - Everything imported goes into a "<Character> <Skin>" collection, for
-  example "Flavia S001" or "Kanami Ruiseñor".
+  example "Flavia S001" or "Kanami Ruiseñor" (taken from the model's folders
+  .../<Character>/<Skin>/Mesh3D/...; a loose file uses its own name).
 
 Which model to use: each skin has the match model (Mesh3D) and the lobby one
 (Mesh3DLobby). Almost always only the lobby one has the facial expressions.
@@ -139,6 +148,12 @@ They are also in the rig's Object Properties > Custom Properties.
   carries the head, and moving the control aims it. Its parent can be
   changed in the rig's panel (parent_switch). Turn it off with "Use Head
   Controller" on the gear above the head (plate-settings).
+- Elbows: in IK, rotate the arm's IK control (upper_arm_ik) to swing the
+  elbow. The arm's "Pole" switch (Rigify panel) aims it at a pole target
+  instead, already placed 60 cm behind the elbow.
+- Knees: the leg IK aims the knee forward with a pole target 60 cm in front.
+  Pole targets are hidden in the "IK Poles" bone collection: show it (eye
+  icon in the Bone Collections list) to move them.
 - Gacha Setup's automatic shoulder is off: it twisted the upper arm when
   moving the hand. Turn it back on with "Toggle Shoulder Constraints" in
   plate-settings.
@@ -232,8 +247,13 @@ panel's "Weapons" section. Importing a character never brings its weapon.
   so it matches when you put it in their hand. Otherwise it creates its own
   sun.
 - Textures are looked up in FModel's SkinAssets folder: next to the model
-  if it comes from FModel, or from the panel's "Character folder" if it's an
-  .fbx.
+  if it comes from FModel. For a weapon kept elsewhere (an .fbx), like a
+  character: in its own folder and the folders above it (the nearest one
+  holding its textures); if they aren't there, in the
+  "FModel export folder" of the add-on's preferences (Edit > Preferences >
+  Add-ons > Strinova Toon Setup). It fills itself in the first time you
+  import anything from FModel's export; you can also set it by hand. If you export missing textures with FModel while Blender is open,
+  importing the weapon again finds them (no need to restart Blender).
 - Weapon controls ("Weapon" bone collection):
     * Yellow frame (Root): moves and rotates the whole weapon.
     * Light blue circles: the moving parts, like the magazine (Magazine),
@@ -287,8 +307,8 @@ panel's "Weapons" section. Importing a character never brings its weapon.
 ------------------
 
 Modules (strinova_toon folder):
-  importer.py   Import .uemodel / .fbx / skin folder and detect FModel's
-                folder.
+  importer.py   Import .uemodel / .fbx / skin folder and find the
+                character's texture folder.
   shading.py    Toon materials, sun and head empties, lighting panel and
                 outline.
   rig.py        Rig with Gacha Setup, fixes on top of it, and physics.
@@ -300,5 +320,5 @@ Modules (strinova_toon folder):
   i18n.py       Spanish translation of the interface. UI text is written in
                 English; a new UI string needs its line here.
   migrate.py    Renames what older versions created with Spanish names.
-  materials.json  Data for every character material.
+  materials.json  Data for every character and weapon material.
   __init__.py   Panel and registration.

@@ -18,17 +18,19 @@ English guide: INSTRUCTIONS.txt.
 1. REQUISITOS
 -------------
 
-- Blender 5.2.
+- Blender 5.2 o 5.3.
 - Gacha Setup (add-on "setup_wizard"): obligatorio para generar el rig.
   https://github.com/PaoloESAN/gacha-setup/releases
 - UEFormat v10 o superior: solo para importar archivos .uemodel.
   Con .fbx no hace falta.
   https://github.com/h4lfheart/UEFormat
-- Para el toon shading, las texturas (.png) del personaje, en una carpeta con
-  su nombre (por ejemplo ...\Kanami\, con sus skins dentro, como la que
-  genera FModel). Los datos de cada material (qué textura va en cada canal,
-  brillo, transparencia...) ya vienen incluidos en el add-on
-  (strinova_toon\materials.json), así que no hacen falta los .json de FModel.
+- Para el toon shading, las texturas (.png) con los nombres de archivo del
+  juego, junto al modelo o en una carpeta por encima de él (por ejemplo la
+  exportación de FModel, ...\Kanami\ con sus skins dentro). El add-on las
+  encuentra solo. Los datos de cada material, de personajes y armas (qué
+  textura va en cada canal, brillo, transparencia...), ya vienen incluidos
+  en el add-on (strinova_toon\materials.json), así que no hacen falta los
+  .json de FModel.
   Si la carpeta sí trae los .json, se usan esos (por si son más nuevos).
   El modelo puede venir de otra fuente; sin las texturas, el importador, el
   rig y la cara funcionan igual, pero los materiales quedan como vienen.
@@ -72,13 +74,23 @@ El panel está en el viewport 3D, pestaña "Strinova" (tecla N).
     * Aplicar Toon Shading: materiales, iluminación y contorno.
     * Generar rig: rig con Gacha Setup, controles de cara y física.
     * Incluir versión de papel: trae también la versión de papel de la skin.
-- "Carpeta del personaje": carpeta de la exportación de FModel con texturas
-  y materiales. Se rellena sola al importar desde FModel. Solo hace falta
-  tocarla al importar un .fbx guardado en otro sitio: el add-on reconoce el
-  personaje por el nombre de sus carpetas (.../<Personaje>/<Skin>/Mesh3D/...)
-  y busca sus texturas en la exportación de FModel.
+- "Carpeta del personaje": de dónde se toman las texturas (y los .json de
+  FModel). Se rellena sola al importar, no hace falta ponerla antes:
+    * desde la exportación de FModel, es la carpeta del personaje
+      (...\Characters\<Nombre>);
+    * en cualquier otro sitio (un .fbx, otra exportación), el add-on busca
+      las texturas del modelo primero en su propia carpeta y luego en las
+      carpetas de encima (hasta 4 niveles), y se queda con la más cercana
+      que las tenga.
+  Solo si no están cerca del modelo busca el personaje en la exportación de
+  FModel (la "Carpeta de exportación de FModel" de las preferencias del
+  add-on) o usa la carpeta que ya tenga el panel: ponle la carpeta con las
+  texturas y vuelve a importar.
+  La búsqueda nunca recorre un disco entero ni carpetas muy grandes (tu
+  carpeta de usuario, por ejemplo), así que deja las texturas cerca del modelo.
 - Todo lo importado queda en una colección "<Personaje> <Skin>", por ejemplo
-  "Flavia S001" o "Kanami Ruiseñor".
+  "Flavia S001" o "Kanami Ruiseñor" (sacado de las carpetas del modelo
+  .../<Personaje>/<Skin>/Mesh3D/...; un archivo suelto usa su propio nombre).
 
 Qué modelo usar: cada skin trae el modelo de partida (Mesh3D) y el de lobby
 (Mesh3DLobby). Casi siempre solo el de lobby trae las expresiones de la cara.
@@ -139,6 +151,13 @@ También están en Object Properties > Custom Properties del rig.
   la cabeza, y mover el control la orienta. Su padre se cambia en el panel
   del rig (parent_switch). Se apaga con "Use Head Controller" en el
   engranaje sobre la cabeza (plate-settings).
+- Codos: en IK, rota el control IK del brazo (upper_arm_ik) para girar el
+  codo. El interruptor "Pole" del brazo (panel de Rigify) lo hace apuntar a
+  un objetivo de pole, ya colocado 60 cm detrás del codo.
+- Rodillas: el IK de la pierna apunta la rodilla hacia delante con un
+  objetivo de pole 60 cm por delante. Los objetivos de pole están ocultos en
+  la colección de huesos "IK Poles": muéstrala (icono del ojo en la lista de
+  Bone Collections) para moverlos.
 - El hombro automático de Gacha Setup está apagado: retorcía el brazo
   superior al mover la mano. Se vuelve a encender con "Toggle Shoulder
   Constraints" en plate-settings.
@@ -235,8 +254,15 @@ Las armas se importan aparte, con el botón "Importar arma" de la sección
   personaje, así combina cuando la pongas en su mano. Si no, crea su
   propio sol.
 - Las texturas se buscan en la carpeta SkinAssets de FModel: junto al
-  modelo si viene de FModel, o a partir de la "Carpeta del personaje" del
-  panel si es un .fbx.
+  modelo si viene de FModel. Para un arma guardada en otro sitio (un .fbx),
+  igual que un personaje: en su propia carpeta y en las de encima (la más
+  cercana con sus texturas); si no están ahí, en la
+  "Carpeta de exportación de FModel" de las preferencias del add-on
+  (Editar > Preferencias > Add-ons > Strinova Toon Setup). Se rellena sola la
+  primera vez que importas algo desde la exportación de FModel; también
+  puedes ponerla a mano. Si exportas con FModel texturas que faltaban con
+  Blender abierto, al volver a importar el arma las encuentra (no hace falta
+  reiniciar Blender).
 - Controles del arma (colección de huesos "Weapon"):
     * Marco amarillo (Root): mueve y gira el arma entera.
     * Círculos celestes: las piezas que se mueven, como cargador
@@ -291,8 +317,8 @@ Las armas se importan aparte, con el botón "Importar arma" de la sección
 ------------------------
 
 Módulos (carpeta strinova_toon):
-  importer.py   Importar .uemodel / .fbx / carpeta de skin y detectar la
-                carpeta de FModel.
+  importer.py   Importar .uemodel / .fbx / carpeta de skin y encontrar la
+                carpeta de texturas del personaje.
   shading.py    Materiales toon, sol y empties de la cabeza, panel de
                 iluminación y contorno.
   rig.py        Rig con Gacha Setup, arreglos sobre él y física.
@@ -305,5 +331,5 @@ Módulos (carpeta strinova_toon):
                 en inglés; cada texto nuevo necesita su línea aquí.
   migrate.py    Renombra lo que crearon versiones anteriores con nombres en
                 español.
-  materials.json  Datos de todos los materiales de los personajes.
+  materials.json  Datos de todos los materiales de personajes y armas.
   __init__.py   Panel y registro.

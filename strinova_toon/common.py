@@ -1,6 +1,44 @@
 """Helpers shared by several modules."""
 # UI text is written in English; i18n.py translates it (Blender > Preferences > Interface > Language)
+import os
+import bpy
 from bpy.app.translations import pgettext_iface as iface_, pgettext_tip as tip_, pgettext_rpt as rpt_
+
+
+def _prefs():
+    addon = bpy.context.preferences.addons.get(__package__)
+    return addon.preferences if addon else None
+
+
+def skin_assets(path):
+    """FModel's SkinAssets folder in `path` (a file or folder inside it, or a folder above it), or None."""
+    if not path:
+        return None
+    path = os.path.normpath(bpy.path.abspath(path))
+    parts = path.split(os.sep)
+    if "SkinAssets" in parts:
+        return os.sep.join(parts[: parts.index("SkinAssets") + 1])
+    for d, dirs, _ in os.walk(path):  # a folder above it (Output\Exports...): a few levels down at most
+        if "SkinAssets" in dirs:
+            return os.path.join(d, "SkinAssets")
+        if d[len(path):].count(os.sep) >= 5:
+            dirs.clear()
+    return None
+
+
+def fmodel_root():
+    """SkinAssets of the FModel export in the add-on's preferences, or None."""
+    p = _prefs()
+    return skin_assets(p.fmodel_dir) if p else None
+
+
+def remember_fmodel(path):
+    """Keep the FModel export a model was imported from in the preferences (once per PC), so models kept
+    elsewhere (an .fbx, a weapon) still find the game's textures."""
+    p, root = _prefs(), skin_assets(path) if path and "SkinAssets" in os.path.normpath(path).split(os.sep) else None
+    if p and root and fmodel_root() != root:
+        p.fmodel_dir = root
+        bpy.context.preferences.is_dirty = True  # saved with the preferences (auto-save, or Save Preferences)
 
 
 def target_mesh(context):

@@ -2,7 +2,7 @@
 shading and rig operators (through bpy.ops)."""
 import bpy, os, re, glob
 from bpy_extras.io_utils import ImportHelper
-from . import paper, shading
+from . import paper, shading, common
 from .common import rpt_
 
 
@@ -18,11 +18,14 @@ def char_dir_from(path, mesh=None, current=""):
     if found:
         return found
     # FBX kept outside the FModel export in a <Name>/<Skin>/... tree: textures and material JSONs
-    # stay in FModel's export, so take <Name>'s folder next to the one already set in the panel
-    chars_root = os.path.dirname(os.path.normpath(current)) if current else ""
-    for p in reversed(parts[1:-1]):  # not the drive: join(root, "D:") is "D:"
-        if chars_root and os.path.isdir(os.path.join(chars_root, p)):
-            return os.path.join(chars_root, p)
+    # stay in FModel's export, so take <Name>'s folder next to the one already set in the panel, or in
+    # the FModel export remembered in the preferences
+    fm = common.fmodel_root()
+    roots = [os.path.dirname(os.path.normpath(current)) if current else "", os.path.join(fm, "Characters") if fm else ""]
+    for chars_root in filter(None, roots):
+        for p in reversed(parts[1:-1]):  # not the drive: join(root, "D:") is "D:"
+            if os.path.isdir(os.path.join(chars_root, p)):
+                return os.path.join(chars_root, p)
     if not (current and os.path.isdir(bpy.path.abspath(current))):
         return os.path.dirname(path)  # no textures anywhere near: the shading reports them missing
     return None  # keep the folder already set in the panel
@@ -167,6 +170,7 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
             return {"CANCELLED"}
         if context.mode != "OBJECT":
             bpy.ops.object.mode_set(mode="OBJECT")
+        common.remember_fmodel(self.filepath)
         # One collection per character, active for the whole import: UEFormat imports into the active
         # collection and Gacha Setup's rigger names the rig after it and puts its objects and its
         # WGTS_* (control shapes) collection there, so everything lands together.

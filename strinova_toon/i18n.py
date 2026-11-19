@@ -90,8 +90,16 @@ ES = {
     "The file has no model": "El archivo no trae ningún modelo",
     ", {}/{} materials": ", {}/{} materiales",
     ", lit by {}": ", con la luz de {}",
-    ", no shading: FModel's SkinAssets folder not found (check the character folder)":
-        ", sin shading: no encuentro la carpeta SkinAssets de FModel (revisa la carpeta del personaje)",
+    ", no shading: FModel's SkinAssets folder not found (set it in the add-on's preferences)":
+        ", sin shading: no encuentro la carpeta SkinAssets de FModel (ponla en las preferencias del add-on)",
+    # preferences
+    "FModel export folder": "Carpeta de exportación de FModel",
+    "FModel's export with the game's textures (the folder holding SkinAssets, or SkinAssets itself). "
+    "Filled in by itself the first time you import from it. Used when a model elsewhere (an .fbx, a "
+    "weapon) has no textures near it":
+        "La exportación de FModel con las texturas del juego (la carpeta que contiene SkinAssets, o SkinAssets). "
+        "Se rellena sola la primera vez que importas desde ella. Se usa cuando un modelo guardado en otro sitio "
+        "(un .fbx, un arma) no tiene texturas cerca",
     ", with {}": ", con {}",
     " and ": " y ",
     "sight": "mira",

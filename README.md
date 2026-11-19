@@ -22,7 +22,7 @@ It works with both model formats, **`.uemodel`** and **`.fbx`**, wherever they c
 
 | | |
 |---|---|
-| **Blender 5.2** | |
+| **Blender 5.2 or 5.3** | |
 | **[Gacha Setup](https://github.com/PaoloESAN/gacha-setup/releases)** | Required for the rig: this add-on uses its rigger. |
 | **[UEFormat](https://github.com/h4lfheart/UEFormat)** | Only for importing `.uemodel` (not needed for `.fbx`). |
 

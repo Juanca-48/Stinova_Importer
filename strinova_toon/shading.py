@@ -39,21 +39,22 @@ TEXTURE_LEVELS = 4  # folders above the model searched for its textures (Mesh3D 
 WALK_CAP = 25000
 
 
-def texture_names(obj):
+def texture_names(obj, weapon=False):
     """Lower-case names of the textures `obj`'s materials use, from the bundled material table."""
     names = set()
     for slot in obj.material_slots:
         if slot.material and not slot.material.name.endswith(OUTLINE_SUFFIX):
             base = re.sub(r"\.\d{3}$", "", slot.material.name)
-            data = bundled_material(base, skin_of(base, ""), "") or {}
+            data = bundled_material(base, weapon_skin(base) if weapon else skin_of(base, ""), "") or {}
             names |= {v["ObjectName"].split("'")[1].lower() for v in data.get("Textures", {}).values() if v}
     return names
 
 
-def texture_root(path, names):
+def texture_root(path, names, ext=".png"):
     """The folder around a model file that holds its textures: its own folder first, then each parent
     (up to TEXTURE_LEVELS, never a drive root), keeping the nearest one that finds the most of `names`
-    (any PNG when empty). None if none has any."""
+    (lower-case file names without extension; any file of `ext` when empty). None if none has any.
+    Weapons look for their material JSONs (ext=".json"): no bundled data says which textures they use."""
     best, best_n, stale = None, 0, 0
     folder = os.path.dirname(os.path.abspath(path))
     for _ in range(TEXTURE_LEVELS + 1):
@@ -64,10 +65,10 @@ def texture_root(path, names):
             seen += len(files)
             if seen > WALK_CAP:
                 return best
-            found |= {n for n in (os.path.splitext(f)[0].lower() for f in files if f.lower().endswith(".png"))
+            found |= {n for n in (os.path.splitext(f)[0].lower() for f in files if f.lower().endswith(ext))
                       if not names or n in names}
             if found and (not names or found >= names):
-                return folder  # all of them (or, with no names, any PNG): nothing nearer was better
+                return folder  # all of them (or, with no names, any file): nothing nearer was better
         stale = stale + 1 if best and len(found) <= best_n else 0
         if stale == 2:
             break  # two levels up found nothing new: the rest is missing from the export, not further up
@@ -106,6 +107,11 @@ def pick(idx, name, skin):
 def skin_of(name, fallback):
     m = re.search(r"_(S\d{3})", name)
     return m.group(1) if m else fallback
+
+
+def weapon_skin(name):
+    m = re.search(r"_(\d{3})(?:_|$)", name)  # MI_Weap_AKM_104_01: skin S104
+    return f"S{m.group(1)}" if m else ""
 
 
 # ---------- node sections (frames) ----------
@@ -1095,8 +1101,7 @@ def build_weapon_group():
 
 def setup_weapon_material(mat, data, tex_idx, weapon_group, report):
     t = {k: v["ObjectName"].split("'")[1] for k, v in data.get("Textures", {}).items() if v}
-    m = re.search(r"_(\d{3})(?:_|$)", mat.name)  # MI_Weap_AKM_104_01: skin S104
-    skin = f"S{m.group(1)}" if m else ""
+    skin = weapon_skin(mat.name)
     base_p = next((p for k in ("PM_Diffuse", "BaseColor_LOW", "BaseMap") for p in [pick(tex_idx, t.get(k, ""), skin)] if p), None)
     props = data.get("Properties", {}).get("BasePropertyOverrides", {})
     if not base_p:
@@ -1187,12 +1192,17 @@ def shade_weapon(context, meshes, assets_root, host=None):
                 mat = slot.material
                 if not mat or mat.name.endswith(OUTLINE_SUFFIX):
                     continue
-                jp = pick(json_idx, re.sub(r"\.\d{3}$", "", mat.name), "")
-                if not jp:
+                base = re.sub(r"\.\d{3}$", "", mat.name)
+                jp = pick(json_idx, base, "")  # a JSON next to the textures wins (newer or edited export)
+                if jp:
+                    with open(jp, encoding="utf-8") as fh:
+                        data = json.load(fh)
+                else:
+                    data = bundled_material(base, weapon_skin(base), "")
+                if not data:
                     report[mat.name] = NO_DATA
                     continue
-                with open(jp, encoding="utf-8") as fh:
-                    setup_weapon_material(mat, json.load(fh), tex_idx, weapon_g, report)
+                setup_weapon_material(mat, data, tex_idx, weapon_g, report)
         return report
 
     report = shade(*_cached_index(assets_root))
