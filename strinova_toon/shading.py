@@ -14,20 +14,22 @@ SHADOW_TINT = (0.80, 0.70, 0.82, 1.0)
 
 
 # ---------- file lookup ----------
-def index_files(root, ext, prefer=None):
-    """{lower-case file name without extension: [paths]}. Paths under `prefer` (the model's own skin
-    folder) go first: a tree renamed by skin name has no Sxxx in its paths for pick() to match."""
-    idx = {}
+def index_files(root, exts=(".png", ".json"), prefer=None):
+    """One {lower-case file name without extension: [paths]} per extension in `exts`, in one walk.
+    Paths under `prefer` (the model's own skin folder) go first: a tree renamed by skin name has no
+    Sxxx in its paths for pick() to match."""
+    idx = {e: {} for e in exts}
     for d, _, files in os.walk(root):
         for f in files:
-            if f.lower().endswith(ext):
+            name, e = os.path.splitext(f)
+            if e.lower() in idx:
                 # case-insensitive: JSONs say T_Aika_body_1_D for the file T_Aika_Body_1_D.png
-                idx.setdefault(os.path.splitext(f)[0].lower(), []).append(os.path.join(d, f))
+                idx[e.lower()].setdefault(name.lower(), []).append(os.path.join(d, f))
     if prefer:
         prefer = os.path.normcase(os.path.normpath(prefer)) + os.sep
-        for paths in idx.values():
+        for paths in (p for i in idx.values() for p in i.values()):
             paths.sort(key=lambda p: not os.path.normcase(p).startswith(prefer))
-    return idx
+    return tuple(idx.values())
 
 
 TEXTURE_LEVELS = 4  # folders above the model searched for its textures (Mesh3D < skin < name < Characters < export)
@@ -75,7 +77,8 @@ def texture_root(path, names):
     return best
 
 
-MISSING = "falta textura: "  # report entry of a material whose texture file isn't in the folder
+MISSING = "falta textura: "
+NO_DATA = "sin datos de material, se deja igual"  # report entry of a material with no JSON nor bundled data  # report entry of a material whose texture file isn't in the folder
 
 
 def missing_textures(report):
@@ -1006,8 +1009,7 @@ def run(obj, char_dir):
     arm = obj.find_armature()
     mesh_skin = skin_of(obj.name, "")
     own = source_skin_dir(obj)
-    tex_idx = index_files(char_dir, ".png", own)
-    json_idx = index_files(char_dir, ".json", own)
+    tex_idx, json_idx = index_files(char_dir, prefer=own)
     sun, emp = ensure_rig(obj, arm)
     ensure_lighting_panel(bpy.context, obj)  # after ensure_rig: it aims the sun with the sun handle
     toon_g, face_g = build_toon_group(), build_face_group()
@@ -1029,7 +1031,7 @@ def run(obj, char_dir):
         else:
             data = bundled_material(base_name, skin, char_dir)
         if not data:
-            report[mat.name] = "sin datos de material, se deja igual"
+            report[mat.name] = NO_DATA
             continue
         setup_material(mat, data, tex_idx, mesh_skin, face_g, toon_g, report)
     ensure_outline(obj)
@@ -1167,29 +1169,38 @@ def glass_material(mat, tint, opacity, report):
     report[mat.name] = {"tipo": "cristal", "texturas": []}
 
 
-@functools.lru_cache(maxsize=4)
-def _cached_index(root, ext):
-    return index_files(root, ext)
+@functools.lru_cache(maxsize=2)
+def _cached_index(root):
+    return index_files(root)  # SkinAssets: ~20k files, ~1 s to walk
 
 
 def shade_weapon(context, meshes, assets_root, host=None):
     """Toon shading for a weapon's meshes. Lit by `host` (a character mesh: its sun and its panel
     colours, so the weapon matches the hand) or, without one, by a sun of its own."""
-    tex_idx, json_idx = _cached_index(assets_root, ".png"), _cached_index(assets_root, ".json")
     weapon_g = build_weapon_group()
     light_weapon(meshes, host)
-    report = {}
+
+    def shade(tex_idx, json_idx):
+        report = {}
+        for m in meshes:
+            for slot in m.material_slots:
+                mat = slot.material
+                if not mat or mat.name.endswith(OUTLINE_SUFFIX):
+                    continue
+                jp = pick(json_idx, re.sub(r"\.\d{3}$", "", mat.name), "")
+                if not jp:
+                    report[mat.name] = NO_DATA
+                    continue
+                with open(jp, encoding="utf-8") as fh:
+                    setup_weapon_material(mat, json.load(fh), tex_idx, weapon_g, report)
+        return report
+
+    report = shade(*_cached_index(assets_root))
+    if missing_textures(report) or NO_DATA in report.values():
+        # the index is kept between imports: files exported since then are only found by walking again
+        _cached_index.cache_clear()
+        report = shade(*_cached_index(assets_root))
     for m in meshes:
-        for slot in m.material_slots:
-            mat = slot.material
-            if not mat or mat.name.endswith(OUTLINE_SUFFIX):
-                continue
-            jp = pick(json_idx, re.sub(r"\.\d{3}$", "", mat.name), "")
-            if not jp:
-                report[mat.name] = "sin datos de material, se deja igual"
-                continue
-            with open(jp, encoding="utf-8") as fh:
-                setup_weapon_material(mat, json.load(fh), tex_idx, weapon_g, report)
         ensure_outline(m)
     return report
 
