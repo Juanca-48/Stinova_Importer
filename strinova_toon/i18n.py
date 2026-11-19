@@ -4,8 +4,8 @@ Translation) labels, tooltips and reports show these. A new UI string needs its 
 
 ES = {
     # panel
-    "Character folder:": "Carpeta del personaje:",
-    "Character folder": "Carpeta del personaje",
+    "Root folder:": "Carpeta raíz:",
+    "Root folder": "Carpeta raíz",
     "Folder with the character's textures and material JSONs (FModel's Characters\\<Name>). "
     "Filled on import from the model's path":
         "Carpeta con las texturas y los JSON de materiales del personaje (Characters\\<Nombre> de FModel). "
@@ -24,6 +24,19 @@ ES = {
     "Generate rig": "Generar rig",
     "Rig with Gacha Setup, face, gaze and physics on import": "Rig con Gacha Setup, cara, mirada y física al importar",
     "Include paper version": "Incluir versión de papel",
+    "IK method": "Método de IK",
+    "How the generated rig's arm and leg IK aims the elbows and knees":
+        "Cómo apunta el IK de brazos y piernas del rig los codos y las rodillas",
+    "Rotation": "Rotación",
+    "Elbows and knees swing by rotating the arm and leg IK controls (upper_arm_ik, thigh_ik). "
+    "Their poles are ready but off: Rigify's Pole switch turns them on":
+        "Codos y rodillas giran rotando los controles IK de brazo y pierna (upper_arm_ik, thigh_ik). "
+        "Sus poles quedan preparados pero apagados: el interruptor Pole de Rigify los enciende",
+    "Poles": "Poles",
+    "Elbows and knees aim at pole targets, 60 cm away, shown in the IK Poles bone "
+    "collection; the arm and leg IK controls' rotation does nothing then, so they are hidden":
+        "Codos y rodillas apuntan a objetivos de pole, a 60 cm, visibles en la colección de huesos IK Poles; "
+        "la rotación de los controles IK de brazo y pierna no hace nada entonces, así que se ocultan",
     "Also imports the skin's paper version (Mesh2D), joined to the 3D rig with its switch":
         "Importa también la versión de papel (Mesh2D) de la skin, unida al rig del 3D con su interruptor",
     # character import
@@ -49,10 +62,10 @@ ES = {
     "{} has no armature": "{} no tiene armature",
     "Bone not found: {}": "No se encontró el hueso {}",
     "{}/{} materials set up (details in the console)": "{}/{} materiales configurados (detalle en la consola)",
-    "{} of {} materials without textures (e.g. {}): not found in {}. Check the Character folder":
-        "{} de {} materiales sin texturas (p. ej. {}): no están en {}. Revisa la Carpeta del personaje",
-    " | {} materials without textures: check the Character folder ({})":
-        " | {} materiales sin texturas: revisa la Carpeta del personaje ({})",
+    "{} of {} materials without textures (e.g. {}): not found in {}. Check the Root folder":
+        "{} de {} materiales sin texturas (p. ej. {}): no están en {}. Revisa la Carpeta raíz",
+    " | {} materials without textures: check the Root folder ({})":
+        " | {} materiales sin texturas: revisa la Carpeta raíz ({})",
     " | {} materials without textures: not found in {}": " | {} materiales sin texturas: no están en {}",
     " | no facial expressions in this model: import the lobby one, {}":
         " | este modelo no trae expresiones faciales: importa el de lobby, {}",

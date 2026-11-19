@@ -73,14 +73,15 @@ El panel está en el viewport 3D, pestaña "Strinova" (tecla N).
 - Casillas debajo del botón:
     * Aplicar Toon Shading: materiales, iluminación y contorno.
     * Generar rig: rig con Gacha Setup, controles de cara y física.
+      Debajo, el método de IK de brazos y piernas: Rotación o Poles (ver 6).
     * Incluir versión de papel: trae también la versión de papel de la skin.
-- "Carpeta del personaje": de dónde se toman las texturas (y los .json de
+- "Carpeta raíz": de dónde se toman las texturas (y los .json de
   FModel). Se rellena sola al importar, no hace falta ponerla antes:
     * desde la exportación de FModel, es la carpeta del personaje
       (...\Characters\<Nombre>);
     * en cualquier otro sitio (un .fbx, otra exportación), el add-on busca
       las texturas del modelo primero en su propia carpeta y luego en las
-      carpetas de encima (hasta 4 niveles), y se queda con la más cercana
+      carpetas de encima (hasta 7 niveles), y se queda con la más cercana
       que las tenga.
   Solo si no están cerca del modelo busca el personaje en la exportación de
   FModel (la "Carpeta de exportación de FModel" de las preferencias del
@@ -151,13 +152,21 @@ También están en Object Properties > Custom Properties del rig.
   la cabeza, y mover el control la orienta. Su padre se cambia en el panel
   del rig (parent_switch). Se apaga con "Use Head Controller" en el
   engranaje sobre la cabeza (plate-settings).
-- Codos: en IK, rota el control IK del brazo (upper_arm_ik) para girar el
-  codo. El interruptor "Pole" del brazo (panel de Rigify) lo hace apuntar a
-  un objetivo de pole, ya colocado 60 cm detrás del codo.
-- Rodillas: el IK de la pierna apunta la rodilla hacia delante con un
-  objetivo de pole 60 cm por delante. Los objetivos de pole están ocultos en
-  la colección de huesos "IK Poles": muéstrala (icono del ojo en la lista de
-  Bone Collections) para moverlos.
+- Codos y rodillas: se elige en el panel antes de importar, debajo de
+  "Generar rig" (igual para brazos y piernas):
+    * Rotación: rota el control IK (upper_arm_ik, thigh_ik) para girar el
+      codo o la rodilla. Los poles quedan preparados pero apagados: el
+      interruptor "Pole" del miembro (panel de Rigify) enciende uno.
+    * Poles: el codo apunta hacia atrás y la rodilla hacia delante, a
+      objetivos de pole a 60 cm, visibles en la colección de huesos "IK
+      Poles". Los controles IK cuya rotación los gira (upper_arm_ik,
+      thigh_ik) no hacen nada entonces, así que se ocultan (en "Other").
+  En los dos casos la rodilla dobla hacia delante. Con Rotación los
+  objetivos de pole están ocultos: muestra "IK Poles" (icono del ojo en la
+  lista de Bone Collections) para moverlos.
+- Huesos auxiliares ocultos: los de ajustes de cada miembro
+  (upper_arm_parent, thigh_parent) y los del hombro automático están en la
+  colección oculta "Other"; sus ajustes siguen apareciendo en el panel.
 - El hombro automático de Gacha Setup está apagado: retorcía el brazo
   superior al mover la mano. Se vuelve a encender con "Toggle Shoulder
   Constraints" en plate-settings.

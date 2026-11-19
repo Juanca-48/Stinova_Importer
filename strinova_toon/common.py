@@ -26,6 +26,14 @@ def skin_assets(path):
     return None
 
 
+def browse_from_root(op, context):
+    """Open an import's file browser in the panel's Root folder (else it opens wherever it was last,
+    often the desktop)."""
+    root = bpy.path.abspath(context.scene.strinova_char_dir)
+    if root and os.path.isdir(root):
+        op.filepath = os.path.join(root, "")  # trailing separator: a folder, no file picked
+
+
 def fmodel_root():
     """SkinAssets of the FModel export in the add-on's preferences, or None."""
     p = _prefs()

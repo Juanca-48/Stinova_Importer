@@ -143,6 +143,7 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
         # the panel's checkboxes; the file browser's own options sidebar is easy to miss
         sc = context.scene
         self.do_shading, self.do_rig, self.do_paper = sc.strinova_do_shading, sc.strinova_do_rig, sc.strinova_do_paper
+        common.browse_from_root(self, context)
         return super().invoke(context, event)
 
     def execute(self, context):
@@ -259,7 +260,7 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
         msg = f"{mesh.name}: " + ", ".join(done) + (rpt_(" | failed: {} (see console)").format(", ".join(failed)) if failed else "")
         miss = mesh.get("st_missing_textures", 0) if "shading" in done else 0
         if miss:  # the shading's own warning scrolls away behind this message
-            msg += rpt_(" | {} materials without textures: check the Character folder ({})").format(miss, context.scene.strinova_char_dir)
+            msg += rpt_(" | {} materials without textures: check the Root folder ({})").format(miss, context.scene.strinova_char_dir)
         # the match model (Mesh3D) usually has no facial expressions; the lobby one (Mesh3DLobby) has them
         no_face = not paper.is_paper_path(self.filepath) and not mesh.data.shape_keys
         if no_face:

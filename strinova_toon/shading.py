@@ -32,7 +32,9 @@ def index_files(root, exts=(".png", ".json"), prefer=None):
     return tuple(idx.values())
 
 
-TEXTURE_LEVELS = 4  # folders above the model searched for its textures (Mesh3D < skin < name < Characters < export)
+# folders above the model searched for its textures: 7 reaches a shared Texturas folder from the deepest
+# models of a packaged tree (uemodel\Armas\<Weapon>\<Skin>\Mesh\..., props inside a character's Mesh3D)
+TEXTURE_LEVELS = 7
 # files: a bigger tree (a user folder, a whole drive) is no texture export and takes minutes to walk.
 # shortcut: a model with a texture missing from a shallow folder (Downloads\x) may walk up to this many
 # files of the user folder (~10 s on a cold disk) before giving up; lower it if that bites.
@@ -1304,7 +1306,7 @@ class STRINOVA_OT_setup(bpy.types.Operator):
         obj["st_missing_textures"] = len(miss)  # the importer repeats the warning in its own message
         if miss:
             self.report({"WARNING"}, rpt_("{} of {} materials without textures (e.g. {}): not found in {}. "
-                                          "Check the Character folder").format(len(miss), len(report), miss[0], char_dir))
+                                          "Check the Root folder").format(len(miss), len(report), miss[0], char_dir))
         else:
             self.report({"INFO"}, rpt_("{}/{} materials set up (details in the console)").format(done, len(report)))
         return {"FINISHED"}
