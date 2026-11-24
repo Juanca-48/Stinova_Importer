@@ -103,7 +103,6 @@ Qué modelo usar: cada skin trae el modelo de partida (Mesh3D) y el de lobby
 Con el personaje (malla o rig) seleccionado, el panel muestra una sección
 desplegable con su nombre:
 
-- Grosor contorno: grosor de la línea del contorno.
 - Versión de papel: cambia entre el modelo 3D y el de papel (ver punto 8).
 - Mostrar <accesorio>: muestra u oculta cada accesorio (ver punto 9).
 - Física: activa o desactiva la física al instante. Se puede animar.
@@ -124,11 +123,21 @@ También están en Object Properties > Custom Properties del rig.
 - Contorno: casco invertido (modificador "ST Outline"). Sin contorno en cara
   y ojos, como en el juego. Color: la textura base oscurecida.
 - Controles de iluminación (colección de huesos "Lighting" del rig):
-    * Ruedas "Light" (lado iluminado) y "Ambient" (sombra): la posición del
-      selector da el tono y la saturación; la barra, el brillo.
+    * Una rueda por color (ver abajo): la posición del selector da el tono y
+      la saturación; la barra, la intensidad.
     * "ST Sun" (sol): la luz llega desde este control hacia la cabeza y mueve las
       sombras del cuerpo y de la cara.
   Se animan en la misma acción que el personaje.
+- Sección "Iluminación" del panel: aparece con un personaje seleccionado y
+  solo cambia ese (animable; la versión de papel y el arma
+  conectada siguen al personaje):
+    * Tipo de iluminación: colores de las ruedas del rig (Panel del rig) o de
+      esta sección, ocultando las ruedas (Panel de parámetros): Ambiente, Luz / Sombra dura (el corte toon), Luz / Sombra
+      suave (un degradado ancho) y Borde iluminado / en sombra.
+    * Intensidad del borde: fuerza de la luz de borde (rim). El juego solo la
+      define en algunos materiales; Borde extra la añade a todos.
+    * Suavidad de la sombra: borde entre luz y sombra, duro (0) a suave.
+    * Grosor contorno.
 - Cada personaje tiene su propio sol y sus controles: dos personajes pueden
   estar iluminados distinto (uno en interior y otro en exterior).
 - Los tres empties de la cabeza (ST_HeadOrigin / Forward / Up) dan la
