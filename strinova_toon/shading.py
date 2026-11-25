@@ -390,11 +390,12 @@ def shader_out(nt, color, alpha, out_node, x, y):
 
 
 # ---------- node groups ----------
-GROUP_VERSION = 13  # bump when a group changes; 2 = colours and light objects per character (and the outline
+GROUP_VERSION = 14  # bump when a group changes; 2 = colours and light objects per character (and the outline
 #   group's first version mark: older unmarked ST Outline groups, without the no-COL0 fallback, get rebuilt);
 #   3 = matcap UV without Vector Transform (broken in Blender 5.3); 6 = panel colours, shadow softness, rim;
 #   10 = shadow ramps, specular, hair highlight; 11 = hair shadow on the face;
-#   12 = environment reflection, specular from Mask2's B; 13 = Spec1 curve
+#   12 = environment reflection, specular from Mask2's B; 13 = Spec1 curve;
+#   14 = emission times the base colour
 
 
 def shared_group(name, typ, version=None):
@@ -584,7 +585,9 @@ def build_toon_group():
                    {k: gi.outputs[k] for k in RIM_INPUTS}, 100, 100, ramp)
     with section(nt, "MatCap and emission", "color"):
         col = mix_rgb(nt, "ADD", gi.outputs["MatCap Pow"], col, gi.outputs["MatCap"], 450, 100)
-        col = mix_rgb(nt, "ADD", 1.0, col, gi.outputs["Emission"], 600, 100)
+        # tinted by the base colour: Meredith S209's heel light is blue in the game, violet if just added
+        glow = mix_rgb(nt, "MULTIPLY", 1.0, gi.outputs["Emission"], gi.outputs["Base Color"], 450, -100, clamp=False)
+        col = mix_rgb(nt, "ADD", 1.0, col, glow, 600, 100)
     with section(nt, "Specular and hair highlight", "light"):
         view = node(nt, "ShaderNodeNewGeometry", 0, -900).outputs["Incoming"]
         col = mix_rgb(nt, "ADD", 1.0, col, specular(nt, N, L, view, gi.outputs["Base Color"], gi, lit, 200, -900), 2600, -700)
