@@ -157,6 +157,7 @@ También están en Object Properties > Custom Properties del rig.
       (0 = apagado; con 0.3-0.5 ya se nota).
     * Suavidad de la sombra: corte entre luz y sombra, de duro (0) a suave.
       1 = la rampa tal cual.
+    * Sombra del pelo: fuerza de la sombra del pelo en la cara (0 = apagada).
     * Grosor contorno: grosor de la línea del contorno.
   En la escena las ruedas llevan el nombre en inglés: Ambient, Sharp Lit, Sharp
   Shadow, Soft Lit, Soft Shadow, Rim Lit y Rim Shadow.
@@ -356,7 +357,9 @@ Las armas se importan aparte, con el botón "Importar arma" de la sección
   los nombres de los parámetros y puede no coincidir en todas las skins.
 - Beta: la fórmula del especular del juego no está en sus datos, así que el
   metal y los materiales brillantes usan un brillo genérico. Aún sin hacer: los
-  reflejos del entorno y la sombra del pelo en la cara.
+  reflejos del entorno.
+- Sombra del pelo en la cara: en EEVEE solo la hace el pelo que se ve en
+  cámara, y su borde puede verse algo ruidoso con pocas muestras.
 - Los personajes que ya están en una escena conservan su shading hasta volver a
   importarlos.
 - Un arma importada con la 1.3 o anterior conserva la luz que tenía. Al

@@ -3,7 +3,7 @@ bl_info = {
     "name": "Strinova Toon Setup",
     "author": "juanc",
     "version": (1, 4, 0),
-    "warning": "Beta 1",
+    "warning": "Beta 2",
     "blender": (5, 2, 0),
     "location": "3D View > Sidebar (N) > Strinova",
     "description": "Imports Strinova characters (FModel) with toon shading, rig and constraint-based physics",
@@ -123,8 +123,10 @@ class STRINOVA_PT_lighting(bpy.types.Panel):
                 for c in shading.COLORS:
                     box.label(text=common.iface_(shading.ui_name(c)) + ":")
                     box.prop(src, f'["st_{c}"]', text="")
-            for prop, text in (("st_rim_scale", "Rim Scale"), ("st_rim_extra", "Extra Rim"), ("st_shadow_softness", "Shadow Softness")):
-                col.prop(src, f'["{prop}"]', text=text, slider=True)
+            for prop, text in (("st_rim_scale", "Rim Scale"), ("st_rim_extra", "Extra Rim"), ("st_shadow_softness", "Shadow Softness"),
+                               ("st_hair_shadow", "Hair Shadow")):
+                if prop in src and not (prop == "st_hair_shadow" and src.get("st_weapon")):  # added in 1.4: older characters lack it
+                    col.prop(src, f'["{prop}"]', text=text, slider=True)
         omod = mesh.modifiers.get("ST Outline")
         if omod and omod.node_group and not mesh.get("st_weapon"):  # a weapon's is in its own section
             col.prop(shading.mod_input(omod, "Width"), "value", text="Outline width")

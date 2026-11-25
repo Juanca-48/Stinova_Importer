@@ -389,10 +389,10 @@ def shader_out(nt, color, alpha, out_node, x, y):
 
 
 # ---------- node groups ----------
-GROUP_VERSION = 10  # bump when a group changes; 2 = colours and light objects per character (and the outline
+GROUP_VERSION = 11  # bump when a group changes; 2 = colours and light objects per character (and the outline
 #   group's first version mark: older unmarked ST Outline groups, without the no-COL0 fallback, get rebuilt);
 #   3 = matcap UV without Vector Transform (broken in Blender 5.3); 6 = panel colours, shadow softness, rim;
-#   10 = shadow ramps, specular, hair highlight
+#   10 = shadow ramps, specular, hair highlight; 11 = hair shadow on the face
 
 
 def shared_group(name, typ, version=None):
@@ -550,6 +550,22 @@ def build_toon_group():
     return ng
 
 
+def hair_shadow(nt, L, bias, x, y):
+    """1 where the hair in front of the face blocks the sun. Like the game's (HairShadowBias), what is less
+    than `bias` metres nearer to the viewer than the skin casts nothing: the nose, the lids, the lashes.
+    The ray is short: a fringe's narrow shadow, not the one of a hat's brim.
+    shortcut: EEVEE traces the screen, so hair out of the frame casts nothing and the edge is a bit noisy."""
+    geo = node(nt, "ShaderNodeNewGeometry", x, y)
+    off = node(nt, "ShaderNodeVectorMath", x + 180, y, operation="SCALE")
+    nt.links.new(geo.outputs["Incoming"], off.inputs[0])
+    nt.links.new(bias, off.inputs["Scale"])
+    ray = node(nt, "ShaderNodeRaycast", x + 540, y)
+    nt.links.new(vmath(nt, "ADD", geo.outputs["Position"], off.outputs[0], x + 360, y).outputs[0], ray.inputs["Position"])
+    nt.links.new(L, ray.inputs["Direction"])
+    ray.inputs["Length"].default_value = 0.04
+    return ray.outputs["Is Hit"]
+
+
 def build_face_group():
     ng, built = shared_group("ST Face", "ShaderNodeTree")
     if built:
@@ -561,6 +577,8 @@ def build_face_group():
     sock(ng, "SDF", "INPUT", "NodeSocketFloat", 1.0)
     sock(ng, "Ramp ID", "INPUT", "NodeSocketFloat", 4.0)
     sock(ng, "Softness", "INPUT", "NodeSocketFloat", 0.01)
+    sock(ng, "Hair Shadow", "INPUT", "NodeSocketFloat", 0.0)
+    sock(ng, "Hair Shadow Bias", "INPUT", "NodeSocketFloat", 0.015)
     sock(ng, "Flip Side", "INPUT", "NodeSocketFloat", 0.0)  # set 1 if shadow lands on the wrong side
     nt = ng
     with section(nt, "Inputs", "in"):
@@ -603,6 +621,10 @@ def build_face_group():
         normal = node(nt, "ShaderNodeNewGeometry", 0, 100).outputs["Normal"]
         u = math(nt, "MULTIPLY_ADD", math(nt, "SUBTRACT", gi.outputs["SDF"], thr, 200, 50), 3.0, 380, 50)
         nt.nodes[-1].inputs[2].default_value = RAMP_EDGE
+        amount = math(nt, "MULTIPLY", gi.outputs["Hair Shadow"], packed(nt, "st_l_ambient", -200, -450)[1], 0, -450)
+        free = math(nt, "SUBTRACT", 1.0, math(nt, "MULTIPLY", hair_shadow(nt, L, gi.outputs["Hair Shadow Bias"], -600, -650), amount, 200, -450), 380, -450)
+        lit = math(nt, "MULTIPLY", lit, free, 560, 450)
+        u = math(nt, "MINIMUM", u, free, 740, 50)
         ramp = ramp_color(nt, u, gi.outputs["Ramp ID"], scaled_softness(nt, 1.0, -200, -300), 560, 50)
     col = toon_mix(nt, lit, soft, None, normal, gi.outputs["Base Color"], None, None, 400, 150, ramp)
     with section(nt, "Output (emission + transparency)", "out", extra=(go,)):
@@ -705,9 +727,10 @@ COLORS = ("ambient", "sharp_lit", "soft_lit", "sharp_shadow", "soft_shadow", "ri
 SCALARS = {  # property: (default, min, max, description)
     "st_rim_scale": (1.0, 0.0, 5.0, "Strength of the rim light"),
     "st_rim_extra": (0.0, 0.0, 1.0, "Rim light for every material, also those whose game data has none"),
+    "st_hair_shadow": (1.0, 0.0, 1.0, "Shadow the hair casts on the face"),
     "st_shadow_softness": (1.0, 0.0, 20.0, "Edge between light and shadow: 0 hard, higher softer (1 = default)"),
 }
-ALPHA = {"sharp_lit": LIGHTING_TYPE, "sharp_shadow": "st_shadow_softness", "soft_lit": "st_rim_extra", "rim_lit": "st_rim_scale"}
+ALPHA = {"ambient": "st_hair_shadow", "sharp_lit": LIGHTING_TYPE, "sharp_shadow": "st_shadow_softness", "soft_lit": "st_rim_extra", "rim_lit": "st_rim_scale"}
 ALPHA_NEUTRAL = {"sharp_lit": 0.0, "soft_lit": 0.0}  # the others 1
 LEGACY_PICKS = {"sharp_lit": "st_light_pick", "sharp_shadow": "st_ambient_pick"}  # characters imported up to 1.2
 LEGACY_BONES = {"Sharp Lit": "ST Light", "Sharp Shadow": "ST Ambient"}
@@ -898,6 +921,10 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
     else:
         g.inputs["Ramp ID"].default_value = max(0.0, min(26.0, sca.get("RampID", 1.0)))
     if is_face:
+        if not paper:
+            g.inputs["Hair Shadow"].default_value = 1.0
+            # 0.7 cm over the game's: below it the lids shade the whites of the eyes here
+            g.inputs["Hair Shadow Bias"].default_value = 0.007 + 0.01 * max(0.0, sca.get("HairShadowBias", 0.8))
         sdf_p = pick(tex_idx, t["FaceShadowMask"], skin)
         if sdf_p:
             sdf = tex(nt, sdf_p, "Non-Color", -200, -250, g_uv.outputs["SDF UV"])

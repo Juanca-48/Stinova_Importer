@@ -33,6 +33,8 @@ ES = {
     "Rim Scale": "Intensidad del borde",
     "Extra Rim": "Borde extra",
     "Shadow Softness": "Suavidad de la sombra",
+    "Hair Shadow": "Sombra del pelo",
+    "Shadow the hair casts on the face": "Sombra que el pelo hace en la cara",
     "Strength of the rim light": "Fuerza de la luz de borde",
     "Rim light for every material, also those whose game data has none":
         "Luz de borde para todos los materiales, también los que no la traen en los datos del juego",
