@@ -393,7 +393,7 @@ def shader_out(nt, color, alpha, out_node, x, y):
     nt.links.new(alpha, mx.inputs[0])
     nt.links.new(tr.outputs[0], mx.inputs[1])
     nt.links.new(em.outputs[0], mx.inputs[2])
-    nt.links.new(mx.outputs[0], out_node.inputs["Shader"])
+    nt.links.new(mx.outputs[0], out_node.inputs[0])
 
 
 # ---------- node groups ----------
@@ -928,6 +928,11 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
     sca, cols, sw = data.get("Scalars", {}), data.get("Colors", {}), data.get("Switches", {})
     props = data.get("Properties", {}).get("BasePropertyOverrides", {})
     base_p = pick(tex_idx, t.get("BaseMap", ""), skin)
+    from . import effects  # it uses this module's helpers
+    kind = None if base_p else effects.kind_of(data)
+    if kind:
+        effects.setup(mat, data, kind, tex_idx, skin, report)
+        return
     if not base_p:
         # a translucent colour layer with no texture: the shadow the eyelid casts on the eye
         # (MI_Toon_EyeShadow, dark grey at 45%)
@@ -1417,6 +1422,10 @@ def outline_material(src):
     nt = m.node_tree
     nt.nodes.clear()
     out = node(nt, "ShaderNodeOutputMaterial", 600, 0)
+    if src.get("st_effect"):  # ribbons, sparkles: no outline in the game
+        nt.links.new(node(nt, "ShaderNodeBsdfTransparent", 300, 0).outputs[0], out.inputs["Surface"])
+        m.surface_render_method = "BLENDED"
+        return m
     base = next((n.image for n in src.node_tree.nodes if n.type == "TEX_IMAGE" and n.image
                  and n.image.colorspace_settings.name == "sRGB"), None) if src.node_tree else None
     tint = node(nt, "ShaderNodeRGB", -400, -150)

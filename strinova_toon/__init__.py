@@ -14,7 +14,7 @@ bl_info = {
 # Strinova (PaperMan) character setup, one module per concern: see the module list in INSTRUCCIONES.txt.
 if "bpy" in locals():  # add-on reload: refresh the submodules too (import_module also loads new ones)
     import importlib
-    for _n in ("common", "i18n", "shading", "face", "accessory", "rig", "paper", "importer", "weapon", "migrate"):
+    for _n in ("common", "i18n", "shading", "effects", "face", "accessory", "rig", "paper", "importer", "weapon", "migrate"):
         importlib.reload(importlib.import_module(f".{_n}", __package__))
 from . import common, i18n, shading, face, accessory, rig, paper, importer, weapon, migrate
 import bpy

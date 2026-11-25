@@ -130,6 +130,8 @@ También están en Object Properties > Custom Properties del rig.
     * Emisión: solo las partes que marca la máscara (llamas, gemas...).
     * Brillo del pelo: los mechones pintados, donde miran a la cámara.
     * Metal y especular: de las texturas del material (beta, ver sección 11).
+    * Efectos animados (la cinta de Celestia, las llamas y destellos de Flavia,
+      las alas de Kanami...): se mueven solos con la línea de tiempo.
 - Contorno: casco invertido (modificador "ST Outline"). Sin contorno en cara
   y ojos, como en el juego. Color: la textura base oscurecida.
 - Controles de iluminación (colección de huesos "Lighting" del rig):
@@ -360,6 +362,9 @@ Las armas se importan aparte, con el botón "Importar arma" de la sección
   y un suelo genéricos.
 - Sombra del pelo en la cara: en EEVEE solo la hace el pelo que se ve en
   cámara, y su borde puede verse algo ruidoso con pocas muestras.
+- Los efectos animados se parecen a los del juego, no son exactos, y la cinta no
+  ondea. Sus texturas están en la carpeta PaperMan\Effects de FModel: sin ellas
+  (o sin la carpeta de FModel en las preferencias) el efecto es transparente.
 - Los personajes que ya están en una escena conservan su shading hasta volver a
   importarlos.
 - Un arma importada con la 1.3 o anterior conserva la luz que tenía. Al
@@ -381,6 +386,7 @@ Módulos (carpeta strinova_toon):
                 carpeta de texturas del personaje.
   shading.py    Materiales toon, sol y empties de la cabeza, ajustes y ruedas
                 de iluminación, y contorno.
+  effects.py    Materiales de efecto animados (cintas, llamas, destellos).
   rig.py        Rig con Gacha Setup, arreglos sobre él y física.
   face.py       Secciones de la cara, mirada, parpadeo y huesos faciales.
   paper.py      Versión de papel y el cambio 3D / papel.
