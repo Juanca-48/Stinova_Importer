@@ -16,6 +16,9 @@ ES = {
     "Left hand (grip)": "Mano izquierda (agarre)",
     "Outline width": "Grosor contorno",
     "Outline in viewport": "Contorno en el viewport",
+    "Fast viewport": "Viewport rápido",
+    "For animating: shows flat textures, without lighting, outline or effects, in the 3D views only. Nothing is lost (colours, lights, keyframes) and renders don't change":
+        "Para animar: muestra las texturas planas, sin iluminación, contorno ni efectos, solo en las vistas 3D. No se pierde nada (colores, luces, keyframes) y los renders no cambian",
     "Lighting": "Iluminación",
     "Lighting Type:": "Tipo de iluminación:",
     "Rig Panel": "Panel del rig",
@@ -42,6 +45,7 @@ ES = {
     "Edge between light and shadow: 0 hard, higher softer (1 = default)":
         "Borde entre luz y sombra: 0 duro, más alto más suave (1 = por defecto)",
     "Paper version": "Versión de papel",
+    "Mask": "máscara",
     "Show {}": "Mostrar {}",
     "Physics": "Física",
     "Select the mesh or its armature": "Selecciona la malla o su armature",

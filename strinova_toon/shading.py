@@ -250,16 +250,29 @@ def soft_step(nt, value, center, softness, x, y):
 
 
 def hsv_wheel(nt, a, b, value, x, y):
-    """Colour from a point on the lighting panel wheel: angle = hue, radius = saturation."""
-    ang = math(nt, "ARCTAN2", b, a, x, y)
-    hue = math(nt, "FRACT", math(nt, "DIVIDE", ang, tau, x + 150, y), None, x + 300, y)
+    """Colour from a point on the lighting panel wheel, as Blender's colour picker (circle): angle = hue (red at the
+    bottom, cyan at the top), radius = saturation, in display (sRGB) values turned into linear ones."""
+    ang = math(nt, "ARCTAN2", a, b, x, y)
+    turn = math(nt, "ADD", math(nt, "DIVIDE", ang, tau, x + 150, y), 0.5, x + 225, y)
+    hue = math(nt, "FRACT", turn, None, x + 300, y)
     r2 = math(nt, "ADD", math(nt, "MULTIPLY", a, a, x, y - 120), math(nt, "MULTIPLY", b, b, x, y - 200), x + 150, y - 160)
     sat = math(nt, "MINIMUM", math(nt, "SQRT", r2, None, x + 300, y - 160), 1.0, x + 450, y - 160)
     cc = node(nt, "ShaderNodeCombineColor", x + 600, y, mode="HSV")
     nt.links.new(hue, cc.inputs[0])
     nt.links.new(sat, cc.inputs[1])
     nt.links.new(value, cc.inputs[2])
-    return cc.outputs[0]
+    return to_linear(nt, cc.outputs[0], x + 780, y)
+
+
+def to_linear(nt, colour, x, y):
+    """sRGB display values to linear: ((c + 0.055) / 1.055) ^ 2.4 (its straight part near black is left out)."""
+    scaled = node(nt, "ShaderNodeVectorMath", x, y, operation="MULTIPLY_ADD")
+    nt.links.new(colour, scaled.inputs[0])
+    scaled.inputs[1].default_value, scaled.inputs[2].default_value = (1 / 1.055,) * 3, (0.055 / 1.055,) * 3
+    g = node(nt, "ShaderNodeGamma", x + 180, y)
+    nt.links.new(scaled.outputs[0], g.inputs[0])
+    g.inputs[1].default_value = 2.4
+    return g.outputs[0]
 
 
 def packed(nt, name, x, y):
@@ -270,8 +283,7 @@ def packed(nt, name, x, y):
 
 
 def panel_color(nt, name, mode, x, y):
-    """One of the panel's colours: RGB from the sidebar, or a rig wheel's picker (x, z, value). Unclamped:
-    the value slider goes to 1.5."""
+    """One of the panel's colours: RGB from the sidebar, or a rig wheel's picker (x, z, value)."""
     col, _ = packed(nt, f"st_l_{name}", x, y)
     sep = node(nt, "ShaderNodeSeparateXYZ", x + 180, y)
     nt.links.new(col, sep.inputs[0])
@@ -422,13 +434,13 @@ def shader_out(nt, color, alpha, out_node, x, y):
 
 
 # ---------- node groups ----------
-GROUP_VERSION = 15  # bump when a group changes; 2 = colours and light objects per character (and the outline
+GROUP_VERSION = 16  # bump when a group changes; 2 = colours and light objects per character (and the outline
 #   group's first version mark: older unmarked ST Outline groups, without the no-COL0 fallback, get rebuilt);
 #   3 = matcap UV without Vector Transform (broken in Blender 5.3); 6 = panel colours, shadow softness, rim;
 #   10 = shadow ramps, specular, hair highlight; 11 = hair shadow on the face;
 #   12 = environment reflection, specular from Mask2's B; 13 = Spec1 curve;
 #   14 = emission times the base colour;
-#   15 = outline as an instance, normal maps without tangents (playback speed)
+#   15 = outline as an instance, normal maps without tangents (playback speed); 16 = wheels like Blender's
 
 
 def shared_group(name, typ, version=None):
@@ -876,7 +888,7 @@ def bind_settings(mesh, arm):
         _neutral(mesh, c)
         bone = picker_bone(arm, ui_name(c))
         for i, (b, ch) in enumerate(((bone, "LOC_X"), (bone, "LOC_Z"), (f"{bone} Value", "LOC_Z"))):
-            wheel = f"p / {R}" if bone else ("1.0" if i == 2 else "0.0")  # an older rig lacks some wheels: white
+            wheel = f"p / {value_height(arm, bone) if i == 2 else R}" if bone else ("1.0" if i == 2 else "0.0")  # an older rig lacks some wheels: white
             _drive(mesh, f'["st_l_{c}"]', i, f"c if m else {wheel}",
                    [mode, ("c", mesh, f'["st_{c}"][{i}]')] + ([("p", arm, b, ch)] if bone else []))
         if c in ALPHA:
@@ -1166,7 +1178,7 @@ PICKERS = {  # colour: (x, z) of its wheel (m): lit colours on the left, their s
     "Ambient": (0.0, 0.0), "Sharp Lit": (0.0, -0.27), "Sharp Shadow": (0.30, -0.27), "Soft Lit": (0.0, -0.54),
     "Soft Shadow": (0.30, -0.54), "Rim Lit": (0.0, -0.81), "Rim Shadow": (0.30, -0.81)}
 R = 0.08  # wheel radius in metres; drivers divide by it so the shader works with a unit wheel
-VALUE_MAX = 1.5  # value slider range (1 = texture colour, >1 overexposes)
+VALUE_HEIGHT = 2 * R  # the value bar, as tall as the wheel: 0 black at the bottom, 1 white at the top
 SLIDER_DX = 0.14
 SUN_DIST = 0.8  # default distance of the sun handle from the head
 COLL = "Lighting"
@@ -1218,11 +1230,26 @@ def _wheel_colour(nt, sep):
 
 
 def _ramp_colour(nt, sep):
-    v = math(nt, "DIVIDE", sep.outputs["Z"], VALUE_MAX * R, -500, 0)
+    v = math(nt, "DIVIDE", sep.outputs["Z"], VALUE_HEIGHT, -500, 0)
     cc = node(nt, "ShaderNodeCombineColor", -300, 0)
     for i in range(3):
         nt.links.new(v, cc.inputs[i])
-    return cc.outputs[0]
+    return to_linear(nt, cc.outputs[0], -120, 0)
+
+
+def wheel_material():
+    return _emission_mat("ST Wheel HSV", _wheel_colour)
+
+
+def old_bar(arm, bone):
+    """A panel made up to 1.4 beta 2: its value bar starts at the wheel's centre (1 at R, up to 1.5)."""
+    b = arm.data.bones
+    return b[f"{bone} Center"].head_local.z - b[f"{bone} Value"].head_local.z < R / 2
+
+
+def value_height(arm, bone):
+    """Height of the value bar's 1."""
+    return R if old_bar(arm, bone) else VALUE_HEIGHT
 
 
 def _reparent(context, ob, parent, bone=None):
@@ -1267,17 +1294,17 @@ def create_panel(context, near, char_arm):
     for name, (ox, oz) in PICKERS.items():
         bone(f"ST {name} Center", (ox, 0, oz), root)
         bone(f"ST {name}", (ox, 0, oz), root)
-        bone(f"ST {name} Value", (ox + SLIDER_DX, 0, oz), root)
+        bone(f"ST {name} Value", (ox + SLIDER_DX, 0, oz - R), root)
     bone("ST Sun", tuple(sun_at), None, 0.05)
     bpy.ops.object.mode_set(mode="OBJECT")
     context.view_layer.objects.active = prev
-    wheel_mat = _emission_mat("ST Wheel", _wheel_colour)
-    ramp_mat = _emission_mat("ST Value Ramp", _ramp_colour)
+    wheel_mat = wheel_material()
+    ramp_mat = _emission_mat("ST Value Bar", _ramp_colour)
     n = 64
     for name, (ox, oz) in PICKERS.items():
         disc = _mesh_obj(f"ST Wheel {name}", [(0, 0, 0)] + _circle(R, n), [(0, i + 1, (i + 1) % n + 1) for i in range(n)], pan, (ox, 0.005, oz), wheel_mat)
-        h = VALUE_MAX * R
-        track = _mesh_obj(f"ST Bar {name}", [(-0.006, 0, 0), (0.006, 0, 0), (0.006, 0, h), (-0.006, 0, h)], [(0, 1, 2, 3)], pan, (ox + SLIDER_DX, 0.005, oz), ramp_mat)
+        h = VALUE_HEIGHT
+        track = _mesh_obj(f"ST Bar {name}", [(-0.006, 0, 0), (0.006, 0, 0), (0.006, 0, h), (-0.006, 0, h)], [(0, 1, 2, 3)], pan, (ox + SLIDER_DX, 0.005, oz - R), ramp_mat)
         label = bpy.data.objects.new(f"ST Label {name}", bpy.data.curves.new(f"ST Label {name}", "FONT"))
         label.data.body, label.data.size, label.data.align_x = name, 0.028, "CENTER"
         label.parent, label.location, label.rotation_euler = pan, (ox + 0.03, 0.005, oz + R + 0.04), (1.5708, 0, 0)
@@ -1285,7 +1312,7 @@ def create_panel(context, near, char_arm):
         for ob in (disc, track, label):
             coll.objects.link(ob)
     for name in PICKERS:
-        pan.pose.bones[f"ST {name} Value"].location = (0, 0, R)  # value 1 until a preset is applied
+        pan.pose.bones[f"ST {name} Value"].location = (0, 0, VALUE_HEIGHT)  # value 1
     return pan
 
 
@@ -1372,9 +1399,11 @@ def bind_lighting(context, arm, char_arm, mesh):
         s.custom_shape, s.lock_location = bar, (True, True, False)
         s.lock_rotation = s.lock_scale = (True, True, True)
         lim = s.constraints.new("LIMIT_LOCATION")
-        lim.owner_space, lim.use_min_z, lim.use_max_z, lim.min_z, lim.max_z = "LOCAL", True, True, 0.0, VALUE_MAX * R
+        lim.owner_space, lim.use_min_z, lim.use_max_z, lim.min_z, lim.max_z = "LOCAL", True, True, 0.0, 1.5 * R if old_bar(arm, bone) else VALUE_HEIGHT
     for o in arm.children:  # wheels, bars and labels; a modifier: a driven hide_viewport can't come back
         if o.name.startswith(("ST Wheel ", "ST Bar ", "ST Label ")):
+            if o.name.startswith("ST Wheel "):
+                o.data.materials[0] = wheel_material()  # an older panel's has the hues turned
             mod = o.modifiers.get(paper.HIDE) or o.modifiers.new(paper.HIDE, "NODES")
             mod.node_group = paper.hide_group()
             common.drive_modifier(mod, mesh, LIGHTING_TYPE, "v", 0, "")
@@ -1588,6 +1617,13 @@ def material_data(path, name, skin, char_dir):
             "Scalars": {**known.get("Scalars", {}), **data.get("Scalars", {})}}
 
 
+def fast_again():
+    """With the fast viewport on, what was just shaded joins it."""
+    from . import viewport
+    if bpy.context.scene.strinova_fast_viewport:
+        viewport.apply(bpy.context.scene)
+
+
 def run(obj, char_dir):
     arm = obj.find_armature()
     mesh_skin = skin_of(obj.name, "")
@@ -1621,6 +1657,7 @@ def run(obj, char_dir):
             continue
         setup_material(mat, data, tex_idx, mesh_skin, face_g, toon_g, report, characters)
     ensure_outline(obj)
+    fast_again()
     return report
 
 
@@ -1631,7 +1668,7 @@ def run(obj, char_dir):
 # blackened those skins. Here they get the characters' toon (same sun, same panel colours) so a weapon
 # matches the hand that holds it, plus a matcap shine where RMO marks polished metal.
 WEAPON_CLIP = 0.3333  # OpacityMaskClipValue of the weapon materials
-WEAPON_VERSION = 7  # its own version: 3 = RMO read as emissive / roughness / metal; 4 = matcap UV without Vector Transform; 7 = panel colours, extra rim
+WEAPON_VERSION = 8  # its own version: 3 = RMO read as emissive / roughness / metal; 4 = matcap UV without Vector Transform; 7 = panel colours, extra rim
 
 
 def build_weapon_group():
@@ -1789,6 +1826,7 @@ def shade_weapon(context, meshes, assets_root):
         report = shade(*_cached_index(assets_root))
     for m in meshes:
         ensure_outline(m)
+    fast_again()
     return report
 
 

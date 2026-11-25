@@ -134,7 +134,8 @@ They are also in the rig's Object Properties > Custom Properties.
   eyes, like in the game. Color: the base texture, darkened.
 - Lighting controls (rig bone collection "Lighting"):
     * Rig Panel: one wheel for each of the seven colors below. The picker's
-      position sets hue and saturation; the bar, intensity (up to 1.5).
+      position sets hue and saturation and the bar, the value, as in Blender's
+      color picker and in the side panel.
     * "ST Sun": light comes from this control toward the head and moves
       the shadows of the body and the face.
   They animate in the same action as the character.
@@ -159,6 +160,11 @@ They are also in the rig's Object Properties > Custom Properties.
     * Hair Shadow: strength of the shadow the hair casts on the face (0 = off).
     * Outline width: thickness of the outline.
     * Outline in viewport: off, playback is faster; renders keep the outline.
+- "Fast viewport" button (top of the panel): for animating. The 3D views show
+  the flat textures, without lighting, outline, effects nor color wheels, and
+  playback is about twice as fast. Nothing is lost: colors, lights and their
+  keyframes stay, and renders don't change. Press it again to bring it all
+  back. A render of the viewport itself shows what the viewport shows.
 - Characters imported with 1.2 or earlier keep their two wheels (Light and
   Ambient, now called Sharp Lit and Sharp Shadow) and their shading until they
   are imported again.
@@ -376,6 +382,7 @@ Modules (strinova_toon folder):
                 character's texture folder.
   shading.py    Toon materials, sun and head empties, lighting settings and
                 wheels, and outline.
+  viewport.py   Fast viewport switch.
   effects.py    Animated effect materials (ribbons, flames, sparkles).
   own_textures.py  The add-on's own textures for them.
   rig.py        Rig with Gacha Setup, fixes on top of it, and physics.

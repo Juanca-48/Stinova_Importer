@@ -14,9 +14,9 @@ bl_info = {
 # Strinova (PaperMan) character setup, one module per concern: see the module list in INSTRUCCIONES.txt.
 if "bpy" in locals():  # add-on reload: refresh the submodules too (import_module also loads new ones)
     import importlib
-    for _n in ("common", "i18n", "shading", "own_textures", "effects", "face", "accessory", "rig", "paper", "importer", "weapon", "migrate"):
+    for _n in ("common", "i18n", "shading", "own_textures", "effects", "face", "accessory", "rig", "paper", "importer", "weapon", "migrate", "viewport"):
         importlib.reload(importlib.import_module(f".{_n}", __package__))
-from . import common, i18n, shading, face, accessory, rig, paper, importer, weapon, migrate
+from . import common, i18n, shading, face, accessory, rig, paper, importer, weapon, migrate, viewport
 import bpy
 
 
@@ -28,6 +28,8 @@ class STRINOVA_PT_panel(bpy.types.Panel):
 
     def draw(self, context):
         col = self.layout.column()
+        # for animating: renders don't change
+        col.prop(context.scene, "strinova_fast_viewport", toggle=True, icon="PLAY")
         col.label(text="Root folder:")
         col.prop(context.scene, "strinova_char_dir", text="")
         col.separator()
@@ -73,8 +75,11 @@ class STRINOVA_PT_panel(bpy.types.Panel):
                 return
             if paper.PAPER_PROP in arm:  # animatable: keyframe it to swap in one frame
                 body.prop(arm, f'["{paper.PAPER_PROP}"]', text="Paper version", icon="FILE_IMAGE")
-            for k in sorted(k for k in arm.keys() if k.startswith(accessory.SHOW)):  # one per accessory
+            shows = sorted(k for k in arm.keys() if k.startswith(accessory.SHOW))  # one per accessory
+            for k in shows:
                 label = k[len(accessory.SHOW):].removeprefix(accessory.PREFIX)
+                if len(shows) == 1 and accessory.OWN_BONE.match(label):  # scenes up to 1.4 beta 2 may have one per mask bone
+                    label = common.iface_("Mask")
                 body.prop(arm, f'["{k}"]', text=common.iface_("Show {}").format(label), icon="HIDE_OFF")
         if arm and rig.PHYSICS_PROP in arm:
             body.separator()
@@ -130,7 +135,8 @@ class STRINOVA_PT_lighting(bpy.types.Panel):
         omod = mesh.modifiers.get("ST Outline")
         if omod and omod.node_group and not mesh.get("st_weapon"):  # a weapon's is in its own section
             col.prop(shading.mod_input(omod, "Width"), "value", text="Outline width")
-            col.prop(omod, "show_viewport", text="Outline in viewport")  # off: faster playback; renders keep it
+            if not context.scene.strinova_fast_viewport:
+                col.prop(omod, "show_viewport", text="Outline in viewport")  # off: faster playback; renders keep it
 
 
 class STRINOVA_AddonPreferences(bpy.types.AddonPreferences):
@@ -164,6 +170,10 @@ def register():
     bpy.types.Scene.strinova_do_paper = bpy.props.BoolProperty(
         name="Include paper version", default=False,
         description="Also imports the skin's paper version (Mesh2D), joined to the 3D rig with its switch")
+    bpy.types.Scene.strinova_fast_viewport = bpy.props.BoolProperty(
+        name="Fast viewport", default=False, update=viewport.update,
+        description="For animating: shows flat textures, without lighting, outline or effects, in the 3D views only. "
+                    "Nothing is lost (colours, lights, keyframes) and renders don't change")
     bpy.types.Scene.strinova_char_dir = bpy.props.StringProperty(
         name="Root folder",
         subtype="DIR_PATH",
@@ -173,6 +183,7 @@ def register():
 
 
 def unregister():
+    del bpy.types.Scene.strinova_fast_viewport
     del bpy.types.Scene.strinova_char_dir
     del bpy.types.Scene.strinova_do_shading
     del bpy.types.Scene.strinova_do_rig

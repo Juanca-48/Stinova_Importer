@@ -107,10 +107,13 @@ def add_toggle(rig, mesh, bone, idx):
 
 
 def add_existing(rig, mesh):
-    """Controls and show toggles for the accessory bones the skeleton already has (masks)."""
+    """One control and one show toggle per mask the skeleton already has: on its root bone, for the pieces of every
+    mask bone below it (Bai Mo's has twelve)."""
+    is_mask = lambda b: bool(b and OWN_BONE.search(b.name))
     done = 0
-    for b in rig.data.bones:
-        idx = piece(mesh, lambda n, b=b: n == b.name) if OWN_BONE.search(b.name) else []
+    for b in [b for b in rig.data.bones if is_mask(b) and not any(is_mask(p) for p in b.parent_recursive)]:
+        names = {b.name} | {c.name for c in b.children_recursive if is_mask(c)}
+        idx = piece(mesh, lambda n: n in names)
         if idx:
             make_control(rig, b.name, world_points(mesh, idx))
             add_toggle(rig, mesh, b.name, idx)

@@ -139,8 +139,8 @@ También están en Object Properties > Custom Properties del rig.
   y ojos, como en el juego. Color: la textura base oscurecida.
 - Controles de iluminación (colección de huesos "Lighting" del rig):
     * Panel del rig: una rueda para cada uno de los siete colores de abajo. La
-      posición del selector da el tono y la saturación; la barra, la
-      intensidad (hasta 1.5).
+      posición del selector da el tono y la saturación, y la barra, el valor, como
+      en el selector de color de Blender y en el panel lateral.
     * "ST Sun" (sol): la luz llega desde este control hacia la cabeza y mueve las
       sombras del cuerpo y de la cara.
   Se animan en la misma acción que el personaje.
@@ -168,6 +168,12 @@ También están en Object Properties > Custom Properties del rig.
       renders conservan el contorno.
   En la escena las ruedas llevan el nombre en inglés: Ambient, Sharp Lit, Sharp
   Shadow, Soft Lit, Soft Shadow, Rim Lit y Rim Shadow.
+- Botón "Viewport rápido" (arriba del panel): para animar. Las vistas 3D
+  muestran las texturas planas, sin iluminación, contorno, efectos ni ruedas de
+  color, y la reproducción va alrededor del doble de rápida. No se pierde nada:
+  los colores, las luces y sus keyframes se conservan, y los renders no
+  cambian. Púlsalo otra vez para recuperarlo todo. Un render del propio
+  viewport muestra lo que se ve en él.
 - Los personajes importados con la 1.2 o anterior conservan sus dos ruedas
   (Light y Ambient, ahora Sharp Lit y Sharp Shadow) y su shading hasta volver a
   importarlos.
@@ -392,6 +398,7 @@ Módulos (carpeta strinova_toon):
                 carpeta de texturas del personaje.
   shading.py    Materiales toon, sol y empties de la cabeza, ajustes y ruedas
                 de iluminación, y contorno.
+  viewport.py   Interruptor del viewport rápido.
   effects.py    Materiales de efecto animados (cintas, llamas, destellos).
   own_textures.py  Las texturas propias del add-on para ellos.
   rig.py        Rig con Gacha Setup, arreglos sobre él y física.
