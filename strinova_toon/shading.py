@@ -261,23 +261,30 @@ def scaled_softness(nt, softness, x, y):
 
 RAMPS, RAMP_W, RAMP_EDGE = "ST Ramps", 512, 0.53  # RAMP_EDGE: where most ramps turn from shadow to light
 RAMP_FILE = "RampTexture2DArray_LAYER{}.png"  # FModel's "Save Texture" of the game's ramps
-# the add-on's own shadow colours (sRGB), used without that export: one flat, rounded colour per RampID,
+# the add-on's own shadow colours (sRGB), used without that export: one or two rounded colours per RampID,
 # picked by eye to resemble the game's, with a generic edge
-NEUTRAL, LILAC, SKIN, DARK, WARM = (0.85, 0.85, 0.85), (0.82, 0.80, 0.90), (0.96, 0.83, 0.78), (0.50, 0.48, 0.58), (0.88, 0.80, 0.72)
+NEUTRAL, LILAC, SKIN, DARK, WARM = (0.85, 0.85, 0.85), (0.82, 0.80, 0.90), (0.96, 0.83, 0.78), (0.45, 0.43, 0.52), (0.88, 0.80, 0.72)
 OWN_RAMPS = [
     (1.0, 1.0, 1.0), NEUTRAL, LILAC, NEUTRAL, SKIN, SKIN, LILAC, (1.0, 0.84, 0.85), DARK, WARM, LILAC, (0.55, 0.65, 0.80),
-    LILAC, WARM, DARK, WARM, (0.94, 0.89, 0.91), (0.80, 0.65, 0.80), (0.65, 0.45, 0.38), (0.75, 0.68, 0.95),
-    (0.78, 0.72, 0.45), (0.88, 0.68, 0.58), SKIN, (0.68, 0.76, 0.95), (0.76, 0.84, 0.94), (0.76, 0.80, 0.95), (0.75, 0.77, 0.80)]
+    LILAC, WARM, (0.56, 0.54, 0.64), WARM, (0.94, 0.89, 0.91), (0.60, 0.55, 0.80), (0.45, 0.18, 0.15), (0.60, 0.60, 0.95),
+    (0.75, 0.62, 0.38), (0.90, 0.70, 0.62), (0.98, 0.88, 0.85), (0.67, 0.73, 0.92), (0.68, 0.80, 0.97), (0.80, 0.72, 1.0), (0.65, 0.67, 0.71)]
+TWO_TONE = {  # ramp: (colour next to the edge, where the edge ends): satin and metal, whose shadow changes colour
+    17: ((0.92, 0.68, 0.80), 0.7), 18: ((0.70, 0.45, 0.38), 0.7), 19: ((0.82, 0.72, 0.97), 0.7), 20: ((0.80, 0.80, 0.56), 0.7),
+    21: ((0.87, 0.66, 0.55), 0.75), 22: ((0.97, 0.78, 0.76), 0.58), 23: ((0.64, 0.78, 0.95), 0.9), 24: ((0.75, 0.83, 0.94), 0.75),
+    25: ((0.74, 0.74, 0.90), 0.9), 26: ((0.73, 0.75, 0.79), 0.75)}
 
 
 def own_ramps():
-    """Pixels of OWN_RAMPS: flat shadow up to the middle, then a short smooth edge to white."""
+    """Pixels of OWN_RAMPS: shadow up to the middle (flat, or fading to its second tone), then a smooth
+    edge to white."""
     pixels = []
-    for shadow in OWN_RAMPS:
+    for n, shadow in enumerate(OWN_RAMPS):
+        near, end = TWO_TONE.get(n, (shadow, 0.57))
         for i in range(RAMP_W):
-            t = min(max((i / (RAMP_W - 1) - 0.5) / 0.07, 0.0), 1.0)
+            u = i / (RAMP_W - 1)
+            k, t = min(u / 0.45, 1.0), min(max((u - 0.5) / (end - 0.5), 0.0), 1.0)
             t = t * t * (3 - 2 * t)
-            pixels += [c + (1 - c) * t for c in shadow] + [1.0]
+            pixels += [c + (1 - c) * t for c in (a + (b - a) * k for a, b in zip(shadow, near))] + [1.0]
     return pixels
 
 
