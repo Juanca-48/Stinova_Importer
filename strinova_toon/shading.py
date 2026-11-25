@@ -8,7 +8,8 @@ shortcut: only Mask1.R is used (4-matcap atlas quarter); Mask2 and the other cha
 """
 import bpy, os, re, json, contextlib, functools, mathutils
 from math import cos, sin, tau  # imported by name: math() below is a node helper
-from .common import target_mesh, rpt_
+from . import common, paper
+from .common import target_mesh, rpt_, tip_
 
 SHADOW_TINT = (0.80, 0.70, 0.82, 1.0)
 
@@ -199,10 +200,10 @@ def math(nt, op, a, b, x, y):
     return n.outputs[0]
 
 
-def mix_rgb(nt, blend, fac, a, b, x, y):
-    n = node(nt, "ShaderNodeMix", x, y, data_type="RGBA", blend_type=blend, clamp_result=True)
+def mix_rgb(nt, blend, fac, a, b, x, y, clamp=True):
+    n = node(nt, "ShaderNodeMix", x, y, data_type="RGBA", blend_type=blend, clamp_result=clamp)
     for i, v in ((0, fac), (6, a), (7, b)):
-        if isinstance(v, (int, float)):
+        if isinstance(v, (int, float, tuple)):
             n.inputs[i].default_value = v
         else:
             nt.links.new(v, n.inputs[i])
@@ -232,23 +233,73 @@ def hsv_wheel(nt, a, b, value, x, y):
     return cc.outputs[0]
 
 
-def object_color(nt, name, x, y):
-    # Object attribute reads the mesh's custom property (x, z, value of a panel picker, copied there
-    # by drivers), so each character is lit by its own panel
-    a = node(nt, "ShaderNodeAttribute", x - 400, y, attribute_type="OBJECT", attribute_name=name)
-    sep = node(nt, "ShaderNodeSeparateXYZ", x - 250, y)
-    nt.links.new(a.outputs["Vector"], sep.inputs[0])
-    return hsv_wheel(nt, sep.outputs["X"], sep.outputs["Y"], sep.outputs["Z"], x - 100, y)
+def packed(nt, name, x, y):
+    """(colour, alpha) of one of the packed object properties (st_l_*): read from the mesh, so each
+    character is lit by its own panel."""
+    a = node(nt, "ShaderNodeAttribute", x, y, attribute_type="OBJECT", attribute_name=name)
+    return a.outputs["Color"], a.outputs["Alpha"]
 
 
-def toon_mix(nt, lit, base, tint, x, y):
-    """Lit side = base * light colour, shadow side = base * shadow tint * ambient colour."""
-    with section(nt, "Light and ambient colour (lighting panel)", "color"):
-        light = object_color(nt, "st_light_pick", x - 200, y + 250)
-        ambient = object_color(nt, "st_ambient_pick", x - 200, y - 250)
+def panel_color(nt, name, mode, x, y):
+    """One of the panel's colours: RGB from the sidebar, or a rig wheel's picker (x, z, value). Unclamped:
+    the value slider goes to 1.5."""
+    col, _ = packed(nt, f"st_l_{name}", x, y)
+    sep = node(nt, "ShaderNodeSeparateXYZ", x + 180, y)
+    nt.links.new(col, sep.inputs[0])
+    wheel = hsv_wheel(nt, sep.outputs["X"], sep.outputs["Y"], sep.outputs["Z"], x + 360, y)
+    return mix_rgb(nt, "MIX", mode, wheel, col, x + 1140, y, clamp=False)
+
+
+def scaled_softness(nt, softness, x, y):
+    """The material's shadow softness times the panel's (kept above 0: a zero range has no transition)."""
+    return math(nt, "MAXIMUM", math(nt, "MULTIPLY", softness, packed(nt, "st_l_sharp_shadow", x, y)[1], x + 180, y), 0.0005, x + 360, y)
+
+
+def toon_mix(nt, lit, soft, ndl, normal, base, tint, rim, x, y):
+    """Lit side = base * sharp lit, shadow side = base * shadow tint * sharp shadow (the toon edge); then
+    the soft colours (the wide gradient `soft`), the ambient colour over everything and the rim light.
+    rim: {RIM_INPUTS name: socket}, or None."""
+    with section(nt, "Panel colours (rig wheels or sidebar)", "color"):
+        mode = packed(nt, "st_l_sharp_lit", x - 200, y + 600)[1]
+        extra = packed(nt, "st_l_soft_lit", x - 200, y + 450)[1]
+        scale = packed(nt, "st_l_rim_lit", x - 200, y + 300)[1]
+        ambient, sharp_lit, soft_lit, sharp_shadow, soft_shadow, rim_lit, rim_shadow = (
+            panel_color(nt, c, mode, x, y + 600 - 250 * i) for i, c in enumerate(COLORS))
     with section(nt, "Light / shadow mix", "color"):
-        shadow = mix_rgb(nt, "MULTIPLY", 1.0, mix_rgb(nt, "MULTIPLY", 1.0, base, tint, x, y - 100), ambient, x + 150, y - 100)
-        return mix_rgb(nt, "MIX", lit, shadow, mix_rgb(nt, "MULTIPLY", 1.0, base, light, x, y + 100), x + 300, y)
+        shadow = mix_rgb(nt, "MULTIPLY", 1.0, mix_rgb(nt, "MULTIPLY", 1.0, base, tint, x, y - 100), sharp_shadow, x + 150, y - 100)
+        col = mix_rgb(nt, "MIX", lit, shadow, mix_rgb(nt, "MULTIPLY", 1.0, base, sharp_lit, x, y + 100), x + 300, y)
+        col = mix_rgb(nt, "MULTIPLY", 1.0, col, mix_rgb(nt, "MIX", soft, soft_shadow, soft_lit, x + 450, y - 200, clamp=False), x + 600, y)
+        col = mix_rgb(nt, "MULTIPLY", 1.0, col, ambient, x + 750, y)
+    with section(nt, "Rim light", "light"):
+        geo = node(nt, "ShaderNodeNewGeometry", x, y - 300)
+        nv = math(nt, "ABSOLUTE", vmath(nt, "DOT_PRODUCT", normal, geo.outputs["Incoming"], x + 180, y - 300).outputs["Value"], None, x + 360, y - 300)
+        edge = math(nt, "MAXIMUM", math(nt, "SUBTRACT", 1.0, nv, x + 540, y - 300), 0.0, x + 720, y - 300)
+        tint = mix_rgb(nt, "MIX", lit, rim_shadow, rim_lit, x + 540, y - 800, clamp=False)
+        tint = mix_rgb(nt, "MULTIPLY", 1.0, tint, scale, x + 720, y - 800, clamp=False)
+        # "Extra Rim", for the many materials whose JSON has none: mixed in, not added, so it also shows on
+        # black cloth and on skin that is already near white
+        bright = mix_rgb(nt, "MULTIPLY", 1.0, mix_rgb(nt, "MIX", 0.5, base, (1.0, 1.0, 1.0, 1.0), x + 720, y - 450), tint, x + 900, y - 600, clamp=False)
+        col = mix_rgb(nt, "MIX", math(nt, "MULTIPLY", soft_step(nt, edge, 0.55, 0.08, x + 900, y - 450), extra, x + 1260, y - 450), col, bright, x + 1440, y - 450)
+        if rim:
+            # shortcut: the game's formula isn't in the export; read from the parameters. A third of the
+            # rims have scale 0 with intensities up to 8, so the scale can't multiply: it is how much the
+            # fresnel (edge ^ exponent) softens an edge band `range` wide. Revisit with captures.
+            center = math(nt, "MAXIMUM", math(nt, "MULTIPLY_ADD", rim["Rim Range"], -0.7, x + 720, y - 1050), 0.25, x + 900, y - 1050)
+            nt.nodes[-2].inputs[2].default_value = 1.0
+            amt = soft_step(nt, edge, center, 0.08, x + 1080, y - 1050)
+            fres = math(nt, "MULTIPLY", math(nt, "SUBTRACT", 1.0, math(nt, "POWER", edge, rim["Rim Exponent"], x + 900, y - 1250), x + 1080, y - 1250),
+                        rim["Rim Scale"], x + 1260, y - 1250)
+            amt = math(nt, "MULTIPLY", amt, math(nt, "SUBTRACT", 1.0, fres, x + 1440, y - 1250), x + 1620, y - 1050)
+            # dot scale: 0 = all around, 1 = fades out away from the light
+            away = math(nt, "MULTIPLY", math(nt, "MULTIPLY", math(nt, "SUBTRACT", 1.0, ndl, x + 900, y - 1450), 0.5, x + 1080, y - 1450),
+                        rim["Rim Dot Scale"], x + 1260, y - 1450)
+            away = math(nt, "MAXIMUM", math(nt, "SUBTRACT", 1.0, away, x + 1440, y - 1450), 0.0, x + 1620, y - 1450)
+            amt = math(nt, "MULTIPLY", math(nt, "MULTIPLY", amt, away, x + 1800, y - 1050), math(nt, "MAXIMUM", rim["Rim Intensity"], 0.0, x + 1620, y - 1600), x + 1980, y - 1050)
+            own_col = mix_rgb(nt, "MULTIPLY", rim["Rim Use Base"], rim["Rim Color"], base, x + 1440, y - 900, clamp=False)
+            own_col = mix_rgb(nt, "MULTIPLY", 1.0, own_col, tint, x + 1800, y - 900, clamp=False)
+            own_col = mix_rgb(nt, "MULTIPLY", 1.0, own_col, amt, x + 2160, y - 900, clamp=False)
+            col = mix_rgb(nt, "ADD", 1.0, col, own_col, x + 2340, y)
+        return col
 
 
 def shader_out(nt, color, alpha, out_node, x, y):
@@ -263,9 +314,9 @@ def shader_out(nt, color, alpha, out_node, x, y):
 
 
 # ---------- node groups ----------
-GROUP_VERSION = 3  # bump when a group changes; 2 = colours and light objects per character (and the outline
+GROUP_VERSION = 6  # bump when a group changes; 2 = colours and light objects per character (and the outline
 #   group's first version mark: older unmarked ST Outline groups, without the no-COL0 fallback, get rebuilt);
-#   3 = matcap UV without Vector Transform (broken in Blender 5.3)
+#   3 = matcap UV without Vector Transform (broken in Blender 5.3); 6 = panel colours, shadow softness, rim
 
 
 def shared_group(name, typ, version=None):
@@ -326,6 +377,16 @@ def matcap_quadrant(nt, uv, mask, x, y):
     return vmath(nt, "ADD", half.outputs[0], off.outputs[0], x + 1440, y).outputs[0]
 
 
+RIM_INPUTS = {  # ST Toon input: (type, default); off unless the material's JSON sets an intensity
+    "Rim Color": ("NodeSocketColor", (1, 1, 1, 1)), "Rim Intensity": ("NodeSocketFloat", 0.0),
+    "Rim Exponent": ("NodeSocketFloat", 2.0), "Rim Scale": ("NodeSocketFloat", 1.0),
+    "Rim Range": ("NodeSocketFloat", 0.5), "Rim Dot Scale": ("NodeSocketFloat", 1.0),
+    "Rim Use Base": ("NodeSocketFloat", 0.0),
+}
+RIM_SCALARS = {"Rim Intensity": "RimLightIntensity", "Rim Exponent": "RimFresnelEXP", "Rim Scale": "RimFresnelScale",
+               "Rim Range": "RimRange", "Rim Dot Scale": "RimDotScale"}
+
+
 def build_toon_group():
     ng, built = shared_group("ST Toon", "ShaderNodeTree")
     if built:
@@ -341,6 +402,8 @@ def build_toon_group():
     sock(ng, "MatCap", "INPUT", "NodeSocketColor", (0, 0, 0, 1))
     sock(ng, "MatCap Pow", "INPUT", "NodeSocketFloat", 0.0)
     sock(ng, "Emission", "INPUT", "NodeSocketColor", (0, 0, 0, 1))
+    for name, (typ, default) in RIM_INPUTS.items():
+        sock(ng, name, "INPUT", typ, default)
     nt = ng
     with section(nt, "Inputs", "in"):
         gi = node(nt, "NodeGroupInput", -900, 0)
@@ -349,10 +412,13 @@ def build_toon_group():
         L = attr(nt, "lightDir", -700, 300)
         N = vmath(nt, "NORMALIZE", gi.outputs["Normal"], None, -700, 100).outputs[0]
         ndl = vmath(nt, "DOT_PRODUCT", N, L, -400, 200).outputs["Value"]
-        lit = soft_step(nt, ndl, gi.outputs["Middle Value"], gi.outputs["Softness"], -200, 200)
+        lit = soft_step(nt, ndl, gi.outputs["Middle Value"], scaled_softness(nt, gi.outputs["Softness"], -700, -50), -200, 200)
+        soft = math(nt, "MULTIPLY_ADD", ndl, 0.5, 0, 0)
+        nt.nodes[-1].inputs[2].default_value = 0.5
     with section(nt, "MatCap UV (camera-space normal)", "tex"):
         nt.links.new(matcap_uv(nt, N, -500, -250), go.inputs["MatCap UV"])
-    col = toon_mix(nt, lit, gi.outputs["Base Color"], gi.outputs["Shadow Tint"], 100, 100)
+    col = toon_mix(nt, lit, soft, ndl, N, gi.outputs["Base Color"], gi.outputs["Shadow Tint"],
+                   {k: gi.outputs[k] for k in RIM_INPUTS}, 100, 100)
     with section(nt, "MatCap and emission", "color"):
         col = mix_rgb(nt, "ADD", gi.outputs["MatCap Pow"], col, gi.outputs["MatCap"], 450, 100)
         col = mix_rgb(nt, "ADD", 1.0, col, gi.outputs["Emission"], 600, 100)
@@ -410,8 +476,10 @@ def build_face_group():
     with section(nt, "Face shadow: SDF threshold (0 = light in front, 1 = behind)", "light"):
         thr = math(nt, "MULTIPLY_ADD", f, -0.5, 0, 450)
         nt.nodes[-1].inputs[2].default_value = 0.5
-        lit = soft_step(nt, gi.outputs["SDF"], thr, gi.outputs["Softness"], 200, 450)
-    col = toon_mix(nt, lit, gi.outputs["Base Color"], gi.outputs["Shadow Tint"], 400, 150)
+        lit = soft_step(nt, gi.outputs["SDF"], thr, scaled_softness(nt, gi.outputs["Softness"], -200, 250), 200, 450)
+        soft = soft_step(nt, gi.outputs["SDF"], thr, 0.5, 200, 250)
+        normal = node(nt, "ShaderNodeNewGeometry", 0, 100).outputs["Normal"]
+    col = toon_mix(nt, lit, soft, None, normal, gi.outputs["Base Color"], gi.outputs["Shadow Tint"], None, 400, 150)
     with section(nt, "Output (emission + transparency)", "out", extra=(go,)):
         shader_out(nt, col, gi.outputs["Alpha"], go, 650, -300)
     arrange_sections(nt)
@@ -503,6 +571,110 @@ def ensure_rig(obj, arm):
     return sun, empties
 
 
+# ---------- sidebar lighting settings ----------
+# Set on each character's 3D mesh (animatable); drivers copy them, or the rig's wheels, to the object
+# properties the shader reads (st_l_<colour>). EEVEE gives a material at most 8 object attributes, so
+# the scalars travel in the colours' alpha.
+LIGHTING_TYPE = "st_lighting_type"
+COLORS = ("ambient", "sharp_lit", "soft_lit", "sharp_shadow", "soft_shadow", "rim_lit", "rim_shadow")
+SCALARS = {  # property: (default, min, max, description)
+    "st_rim_scale": (1.0, 0.0, 5.0, "Strength of the rim light"),
+    "st_rim_extra": (0.0, 0.0, 1.0, "Rim light for every material, also those whose game data has none"),
+    "st_shadow_softness": (1.0, 0.0, 20.0, "Edge between light and shadow: 0 hard, higher softer (1 = default)"),
+}
+ALPHA = {"sharp_lit": LIGHTING_TYPE, "sharp_shadow": "st_shadow_softness", "soft_lit": "st_rim_extra", "rim_lit": "st_rim_scale"}
+ALPHA_NEUTRAL = {"sharp_lit": 0.0, "soft_lit": 0.0}  # the others 1
+LEGACY_PICKS = {"sharp_lit": "st_light_pick", "sharp_shadow": "st_ambient_pick"}  # characters imported up to 1.2
+LEGACY_BONES = {"Sharp Lit": "ST Light", "Sharp Shadow": "ST Ambient"}
+
+
+def ui_name(color):
+    return color.replace("_", " ").title()
+
+
+def ensure_settings(mesh):
+    """The sidebar's lighting properties on a character mesh (kept if it already has them)."""
+    if LIGHTING_TYPE not in mesh:
+        mesh[LIGHTING_TYPE] = 0
+        mesh.id_properties_ui(LIGHTING_TYPE).update(min=0, max=1, items=[
+            ("RIG", "Rig Panel", tip_("Colours and intensities from the wheels next to the character"), 0, 0),
+            ("PARAMETERS", "Parameter Panel", tip_("Colours from this panel; the rig's wheels are hidden"), 0, 1)])
+    for c in COLORS:
+        if f"st_{c}" not in mesh:
+            mesh[f"st_{c}"] = (1.0, 1.0, 1.0)
+            mesh.id_properties_ui(f"st_{c}").update(subtype="COLOR", min=0.0, max=1.0, default=(1.0, 1.0, 1.0))
+    for p, (default, lo, hi, text) in SCALARS.items():
+        if p not in mesh:
+            mesh[p] = default
+            mesh.id_properties_ui(p).update(min=lo, max=hi, default=default, description=tip_(text))
+
+
+def _drive(owner, path, index, expr, variables):
+    """Scripted driver on owner[path] (index -1: not an array). variables: (name, id, data path), or
+    (name, id, bone, channel) for a pose bone's local location."""
+    args = (path,) if index < 0 else (path, index)
+    owner.driver_remove(*args)
+    if not expr:
+        return
+    d = owner.driver_add(*args).driver
+    d.type = "SCRIPTED"
+    for name, target, where, *channel in variables:
+        v = d.variables.new()
+        v.name, v.type = name, "TRANSFORMS" if channel else "SINGLE_PROP"
+        t = v.targets[0]
+        t.id = target
+        if channel:
+            t.bone_target, t.transform_type, t.transform_space = where, channel[0], "LOCAL_SPACE"
+        else:
+            t.data_path = where
+    d.expression = expr  # simple expressions: no auto-run needed
+
+
+def _neutral(mesh, color):
+    mesh[f"st_l_{color}"] = (0.0, 0.0, 1.0, ALPHA_NEUTRAL.get(color, 1.0))  # a centred wheel: white
+
+
+def bind_settings(mesh, arm):
+    """Drive a character mesh's st_l_* properties from its sidebar settings or, with the Rig Panel, from
+    the pickers in `arm`."""
+    ensure_settings(mesh)
+    mesh.update_tag()  # the evaluated object must get the new properties, or the drivers go invalid
+    mode = ("m", mesh, f'["{LIGHTING_TYPE}"]')
+    for c in COLORS:
+        _neutral(mesh, c)
+        bone = picker_bone(arm, ui_name(c))
+        for i, (b, ch) in enumerate(((bone, "LOC_X"), (bone, "LOC_Z"), (f"{bone} Value", "LOC_Z"))):
+            wheel = f"p / {R}" if bone else ("1.0" if i == 2 else "0.0")  # an older rig lacks some wheels: white
+            _drive(mesh, f'["st_l_{c}"]', i, f"c if m else {wheel}",
+                   [mode, ("c", mesh, f'["st_{c}"][{i}]')] + ([("p", arm, b, ch)] if bone else []))
+        if c in ALPHA:
+            _drive(mesh, f'["st_l_{c}"]', 3, "v", [("v", mesh, f'["{ALPHA[c]}"]')])
+
+
+def follow_settings(mesh, host):
+    """Light `mesh` (a paper version, a weapon) with `host`'s panel; neutral without one."""
+    for c in COLORS:
+        name = f"st_l_{c}"
+        _neutral(mesh, c)
+        old = LEGACY_PICKS.get(c)
+        src = host and next((p for p in (name, old) if p and p in host), None)
+        for i in range(4):
+            _drive(mesh, f'["{name}"]', i, "v" if src and (i < 3 or src == name) else "", [("v", host, f'["{src}"][{i}]')])
+        if old and old in mesh:  # a weapon imported up to 1.2, whose shader reads the wheels from here
+            mesh[old] = (0.0, 0.0, 1.0)
+            for i in range(3):
+                src = host and next((p for p in (old, name) if p in host), None)
+                _drive(mesh, f'["{old}"]', i, "v" if src else "", [("v", host, f'["{src}"][{i}]')])
+
+
+def lighting_source(mesh):
+    """The character mesh whose settings light `mesh`: a paper version's or a weapon's host, or itself.
+    None for a weapon with its own light or a mesh shaded before these settings existed."""
+    if mesh and (mesh.get("st_weapon") or mesh.get("st_light_host")):
+        mesh = mesh.get("st_weapon_host") or mesh.get("st_light_host")
+    return mesh if isinstance(mesh, bpy.types.Object) and LIGHTING_TYPE in mesh else None
+
+
 # ---------- materials ----------
 def load_img(path, colorspace):
     img = bpy.data.images.load(path, check_existing=True)
@@ -586,8 +758,14 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
             used.append(os.path.basename(sdf_p))
             extra_tex = [("SDF de la cara (sombra suave)", sdf)]
     else:
-        mv = sca.get("MiddleValue", 0.15)
-        g.inputs["Middle Value"].default_value = mv if mv > -1 else 0.15
+        g.inputs["Middle Value"].default_value = sca.get("MiddleValue", 0.15)  # -99 (eyes, brows): always lit
+        for name, key in RIM_SCALARS.items():
+            if key in sca:
+                g.inputs[name].default_value = sca[key]
+        c = cols.get("RimLightColor")
+        if c:
+            g.inputs["Rim Color"].default_value = (c["R"], c["G"], c["B"], 1)
+        g.inputs["Rim Use Base"].default_value = float(bool(sw.get("RimLightUseBaseColor")))
         nrm_p = pick(tex_idx, t.get("NormalMap", ""), skin) if sw.get("NeedNormalMap") else None
         normal, normal_label = normal_nodes(nt, nrm_p, (g, g_uv))
         if nrm_p:
@@ -630,9 +808,11 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
     report[mat.name] = {"tipo": "papel" if paper else "face" if is_face else "toon", "texturas": used}
 
 
-# ---------- lighting panel (HSV wheels in the viewport, like Gacha Setup's Genshin panel) ----------
+# ---------- lighting panel in the rig (HSV wheels in the viewport, like Gacha Setup's Genshin panel) ----------
 PANEL = "ST Lighting Panel"  # standalone armature until the character gets a rig, then joined into it
-PICKERS = (("Light", "st_light_pick", 0.0), ("Ambient", "st_ambient_pick", 0.30))  # name, mesh prop, x offset (m)
+PICKERS = {  # colour: (x, z) of its wheel (m): lit colours on the left, their shadow ones on the right
+    "Ambient": (0.0, 0.0), "Sharp Lit": (0.0, -0.27), "Sharp Shadow": (0.30, -0.27), "Soft Lit": (0.0, -0.54),
+    "Soft Shadow": (0.30, -0.54), "Rim Lit": (0.0, -0.81), "Rim Shadow": (0.30, -0.81)}
 R = 0.08  # wheel radius in metres; drivers divide by it so the shader works with a unit wheel
 VALUE_MAX = 1.5  # value slider range (1 = texture colour, >1 overexposes)
 SLIDER_DX = 0.14
@@ -732,27 +912,27 @@ def create_panel(context, near, char_arm):
         return b
 
     root = bone("ST Panel", (0, 0, 0))
-    for name, _, ox in PICKERS:
-        bone(f"ST {name} Center", (ox, 0, 0), root)
-        bone(f"ST {name}", (ox, 0, 0), root)
-        bone(f"ST {name} Value", (ox + SLIDER_DX, 0, 0), root)
+    for name, (ox, oz) in PICKERS.items():
+        bone(f"ST {name} Center", (ox, 0, oz), root)
+        bone(f"ST {name}", (ox, 0, oz), root)
+        bone(f"ST {name} Value", (ox + SLIDER_DX, 0, oz), root)
     bone("ST Sun", tuple(sun_at), None, 0.05)
     bpy.ops.object.mode_set(mode="OBJECT")
     context.view_layer.objects.active = prev
     wheel_mat = _emission_mat("ST Wheel", _wheel_colour)
     ramp_mat = _emission_mat("ST Value Ramp", _ramp_colour)
     n = 64
-    for name, _, ox in PICKERS:
-        disc = _mesh_obj(f"ST Wheel {name}", [(0, 0, 0)] + _circle(R, n), [(0, i + 1, (i + 1) % n + 1) for i in range(n)], pan, (ox, 0.005, 0), wheel_mat)
+    for name, (ox, oz) in PICKERS.items():
+        disc = _mesh_obj(f"ST Wheel {name}", [(0, 0, 0)] + _circle(R, n), [(0, i + 1, (i + 1) % n + 1) for i in range(n)], pan, (ox, 0.005, oz), wheel_mat)
         h = VALUE_MAX * R
-        track = _mesh_obj(f"ST Bar {name}", [(-0.006, 0, 0), (0.006, 0, 0), (0.006, 0, h), (-0.006, 0, h)], [(0, 1, 2, 3)], pan, (ox + SLIDER_DX, 0.005, 0), ramp_mat)
+        track = _mesh_obj(f"ST Bar {name}", [(-0.006, 0, 0), (0.006, 0, 0), (0.006, 0, h), (-0.006, 0, h)], [(0, 1, 2, 3)], pan, (ox + SLIDER_DX, 0.005, oz), ramp_mat)
         label = bpy.data.objects.new(f"ST Label {name}", bpy.data.curves.new(f"ST Label {name}", "FONT"))
-        label.data.body, label.data.size, label.data.align_x = name, 0.035, "CENTER"
-        label.parent, label.location, label.rotation_euler = pan, (ox + 0.03, 0.005, R + 0.04), (1.5708, 0, 0)
+        label.data.body, label.data.size, label.data.align_x = name, 0.028, "CENTER"
+        label.parent, label.location, label.rotation_euler = pan, (ox + 0.03, 0.005, oz + R + 0.04), (1.5708, 0, 0)
         label.hide_select = label.hide_render = True
         for ob in (disc, track, label):
             coll.objects.link(ob)
-    for name, _, _ in PICKERS:
+    for name in PICKERS:
         pan.pose.bones[f"ST {name} Value"].location = (0, 0, R)  # value 1 until a preset is applied
     return pan
 
@@ -800,9 +980,15 @@ def merge_panel(context, pan, rig):
     coll.is_visible = True
 
 
+def picker_bone(arm, name):
+    """The picker bone of a colour in `arm` (characters imported up to 1.2 have two, with other names)."""
+    return next((b for b in (f"ST {name}", LEGACY_BONES.get(name)) if b and b in arm.data.bones), None)
+
+
 def bind_lighting(context, arm, char_arm, mesh):
-    """Pose settings, limits, drivers and sun constraints for the lighting controls in `arm`. The
-    drivers copy each picker into `mesh`'s custom properties, which only its materials read."""
+    """Pose settings, limits, drivers and sun constraints for the lighting controls in `arm`, which light
+    `mesh`."""
+    bind_settings(mesh, arm)
     ring = _mesh_obj("WGT-ST_picker", _circle(0.012), None, None, None)
     bar = _mesh_obj("WGT-ST_slider", [(-0.02, 0, 0), (0.02, 0, 0)], None, None, None)
     circ = _circle(0.03, 24)
@@ -811,36 +997,40 @@ def bind_lighting(context, arm, char_arm, mesh):
     sun_w = _mesh_obj("WGT-ST_sun", circ + rays_out + rays_in, None, None, None,
                       edges=[(i, (i + 1) % 24) for i in range(24)] + [(24 + i, 32 + i) for i in range(8)])
     pb = arm.pose.bones
-    helpers = ("ST Panel",) + tuple(f"ST {n} Center" for n, _, _ in PICKERS)
     for p in pb:
         if p.name.startswith("ST "):
-            hidden = p.name in helpers
+            hidden = p.name == "ST Panel" or p.name.endswith(" Center")
             p.bone.hide = hidden
             p.hide = hidden  # Blender 5: pose-mode visibility lives on the pose bone
             p.use_custom_shape_bone_size = False  # widgets in metres, not scaled by the 3 cm bones
-    for name, prop, _ in PICKERS:
-        p, s = pb[f"ST {name}"], pb[f"ST {name} Value"]
+    for name in PICKERS:
+        bone = picker_bone(arm, name)
+        if not bone:
+            continue
+        p, s = pb[bone], pb[f"{bone} Value"]
         for bone_ in (p, s):
             for c in list(bone_.constraints):
                 bone_.constraints.remove(c)
+            # hidden with the Parameter Panel (Blender 5: pose-mode visibility lives on the pose bone)
+            _drive(bone_, "hide", -1, "v", [("v", mesh, f'["{LIGHTING_TYPE}"]')])
         p.custom_shape, p.lock_location = ring, (False, True, False)
         p.lock_rotation = p.lock_scale = (True, True, True)
         c = p.constraints.new("LIMIT_DISTANCE")
-        c.target, c.subtarget, c.limit_mode, c.distance = arm, f"ST {name} Center", "LIMITDIST_INSIDE", R
+        c.target, c.subtarget, c.limit_mode, c.distance = arm, f"{bone} Center", "LIMITDIST_INSIDE", R
         s.custom_shape, s.lock_location = bar, (True, True, False)
         s.lock_rotation = s.lock_scale = (True, True, True)
         lim = s.constraints.new("LIMIT_LOCATION")
         lim.owner_space, lim.use_min_z, lim.use_max_z, lim.min_z, lim.max_z = "LOCAL", True, True, 0.0, VALUE_MAX * R
-        if prop not in mesh:
-            mesh[prop] = (0.0, 0.0, 1.0)
-        for i, (bone, ch) in enumerate(((p.name, "LOC_X"), (p.name, "LOC_Z"), (s.name, "LOC_Z"))):
-            mesh.driver_remove(f'["{prop}"]', i)
-            drv = mesh.driver_add(f'["{prop}"]', i).driver
-            drv.type, drv.expression = "SCRIPTED", f"var / {R}"  # simple expression: no auto-run needed
-            t = drv.variables.new()
-            t.name, t.type = "var", "TRANSFORMS"
-            t.targets[0].id, t.targets[0].bone_target = arm, bone
-            t.targets[0].transform_type, t.targets[0].transform_space = ch, "LOCAL_SPACE"
+    for o in arm.children:  # wheels, bars and labels; a modifier: a driven hide_viewport can't come back
+        if o.name.startswith(("ST Wheel ", "ST Bar ", "ST Label ")):
+            mod = o.modifiers.get(paper.HIDE) or o.modifiers.new(paper.HIDE, "NODES")
+            mod.node_group = paper.hide_group()
+            common.drive_modifier(mod, mesh, LIGHTING_TYPE, "v", 0, "")
+            # hidden, it also sits on its parent: else Blender's dashed parent line still points at it
+            o.delta_location = (0.0, 0.0, 0.0)
+            away = o.matrix_parent_inverse.inverted().translation - o.location
+            for i in range(3):
+                _drive(o, "delta_location", i, f"v * {away[i]:.6f}", [("v", mesh, f'["{LIGHTING_TYPE}"]')])
     sol = pb["ST Sun"]
     sol.custom_shape = sun_w
     sol.lock_rotation = sol.lock_scale = (True, True, True)
@@ -861,8 +1051,8 @@ def _is_rig(arm):
 
 
 def ensure_lighting_panel(context, near):
-    """Lighting controls: HSV wheels (Luz/Ambiente) + value sliders + sun handle. Drivers copy each
-    picker's position into a property of the character's mesh and the toon shader converts it to RGB."""
+    """Lighting controls in the rig: HSV wheels + value sliders + sun handle. Drivers copy each picker's
+    position into a property of the character's mesh and the toon shader converts it to RGB."""
     char_arm = near.find_armature()
     if "ST Panel" in char_arm.data.bones:
         bind_lighting(context, char_arm, char_arm, near)
@@ -1019,7 +1209,11 @@ def run(obj, char_dir):
     own = source_skin_dir(obj)
     tex_idx, json_idx = index_files(char_dir, prefer=own)
     sun, emp = ensure_rig(obj, arm)
-    ensure_lighting_panel(bpy.context, obj)  # after ensure_rig: it aims the sun with the sun handle
+    host = obj.get("st_light_host")
+    if isinstance(host, bpy.types.Object):  # a paper version: lit by its 3D model's panel
+        follow_settings(obj, host)
+    else:
+        ensure_lighting_panel(bpy.context, obj)  # after ensure_rig: it aims the sun with the sun handle
     toon_g, face_g = build_toon_group(), build_face_group()
     mod = obj.modifiers.get("ST Light Vectors") or obj.modifiers.new("ST Light Vectors", "NODES")
     mod.node_group = build_vectors_gn()
@@ -1053,7 +1247,7 @@ def run(obj, char_dir):
 # blackened those skins. Here they get the characters' toon (same sun, same panel colours) so a weapon
 # matches the hand that holds it, plus a matcap shine where RMO marks polished metal.
 WEAPON_CLIP = 0.3333  # OpacityMaskClipValue of the weapon materials
-WEAPON_VERSION = 4  # its own version: 3 = RMO read as emissive / roughness / metal; 4 = matcap UV without Vector Transform
+WEAPON_VERSION = 7  # its own version: 3 = RMO read as emissive / roughness / metal; 4 = matcap UV without Vector Transform; 7 = panel colours, extra rim
 
 
 def build_weapon_group():
@@ -1080,14 +1274,16 @@ def build_weapon_group():
         L = attr(nt, "lightDir", -700, 300)
         N = vmath(nt, "NORMALIZE", gi.outputs["Normal"], None, -700, 100).outputs[0]
         ndl = vmath(nt, "DOT_PRODUCT", N, L, -400, 200).outputs["Value"]
-        lit = soft_step(nt, ndl, gi.outputs["Middle Value"], gi.outputs["Softness"], -200, 200)
+        lit = soft_step(nt, ndl, gi.outputs["Middle Value"], scaled_softness(nt, gi.outputs["Softness"], -700, -50), -200, 200)
+        soft = math(nt, "MULTIPLY_ADD", ndl, 0.5, 0, 0)
+        nt.nodes[-1].inputs[2].default_value = 0.5
     with section(nt, "MatCap UV (camera-space normal)", "tex"):
         nt.links.new(matcap_uv(nt, N, -500, -250), go.inputs["MatCap UV"])
     with section(nt, "RMO: R emission, G roughness, B metal", "tex"):
         rmo = node(nt, "ShaderNodeSeparateColor", -400, -450)
         nt.links.new(gi.outputs["RMO"], rmo.inputs[0])
     base = gi.outputs["Base Color"]
-    col = toon_mix(nt, lit, base, gi.outputs["Shadow Tint"], 100, 100)
+    col = toon_mix(nt, lit, soft, ndl, N, base, gi.outputs["Shadow Tint"], None, 100, 100)
     with section(nt, "Metal shine (matcap where the metal is polished) and emission", "color"):
         polish = math(nt, "MULTIPLY", rmo.outputs[2], math(nt, "SUBTRACT", 1.0, rmo.outputs[1], 300, -300), 450, -300)
         shine = math(nt, "MULTIPLY", polish, gi.outputs["Metal Shine"], 600, -300)
@@ -1241,18 +1437,7 @@ def light_weapon(meshes, host=None):
         mod = m.modifiers.get("ST Light Vectors") or m.modifiers.new("ST Light Vectors", "NODES")
         mod.node_group = build_vectors_gn()
         mod_input(mod, "Sun").value = sun
-        for prop in ("st_light_pick", "st_ambient_pick"):  # light / ambient colours: the host's panel, or white
-            follow = bool(host) and prop in host
-            m[prop] = tuple(host[prop]) if follow else (0.0, 0.0, 1.0)
-            for i in range(3):
-                m.driver_remove(f'["{prop}"]', i)
-                if follow:
-                    d = m.driver_add(f'["{prop}"]', i).driver
-                    d.type = "SCRIPTED"
-                    v = d.variables.new()
-                    v.name, v.type = "v", "SINGLE_PROP"
-                    v.targets[0].id, v.targets[0].data_path = host, f'["{prop}"][{i}]'
-                    d.expression = "v"
+        follow_settings(m, host)
 
 
 @contextlib.contextmanager

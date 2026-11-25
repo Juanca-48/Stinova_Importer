@@ -46,6 +46,10 @@ class STRINOVA_PT_panel(bpy.types.Panel):
             w = weapon.weapon_rig(context.active_object)
             if w:
                 body.label(text=w.name, icon="ARMATURE_DATA")
+                mesh = weapon.body_mesh(w)
+                omod = mesh.modifiers.get("ST Outline") if mesh else None
+                if omod and omod.node_group:
+                    body.prop(shading.mod_input(omod, "Width"), "value", text="Outline width")
                 holder = weapon.connected(w)
                 if not holder:
                     body.operator(weapon.STRINOVA_OT_weapon_hand.bl_idname, icon="EYEDROPPER")
@@ -59,23 +63,18 @@ class STRINOVA_PT_panel(bpy.types.Panel):
                         hands.prop(w, f'["{weapon.LEFT_PROP}"]', text="Left hand (grip)", toggle=True, icon="HAND")
                     body.operator(weapon.STRINOVA_OT_weapon_release.bl_idname, icon="UNLINKED")
         # shading and rig run inside the import; their operators stay registered for it (and F3)
-        mesh = common.target_mesh(context)
-        omod = mesh.modifiers.get("ST Outline") if mesh else None
         arm = rig.target_rig(context)
-        if omod and omod.node_group or arm:
+        if arm:
             # per-character settings under its name; collapsible, open/closed state remembered by Blender
             header, body = col.panel("strinova_physics", default_closed=False)
-            header.label(text=(arm or mesh).name, icon="ARMATURE_DATA" if arm else "MESH_DATA")
+            header.label(text=arm.name, icon="ARMATURE_DATA")
             if body is None:
                 return
-            if omod and omod.node_group:
-                body.prop(shading.mod_input(omod, "Width"), "value", text="Outline width")
-            if arm and paper.PAPER_PROP in arm:  # animatable: keyframe it to swap in one frame
+            if paper.PAPER_PROP in arm:  # animatable: keyframe it to swap in one frame
                 body.prop(arm, f'["{paper.PAPER_PROP}"]', text="Paper version", icon="FILE_IMAGE")
-            if arm:
-                for k in sorted(k for k in arm.keys() if k.startswith(accessory.SHOW)):  # one per accessory
-                    label = k[len(accessory.SHOW):].removeprefix(accessory.PREFIX)
-                    body.prop(arm, f'["{k}"]', text=common.iface_("Show {}").format(label), icon="HIDE_OFF")
+            for k in sorted(k for k in arm.keys() if k.startswith(accessory.SHOW)):  # one per accessory
+                label = k[len(accessory.SHOW):].removeprefix(accessory.PREFIX)
+                body.prop(arm, f'["{k}"]', text=common.iface_("Show {}").format(label), icon="HIDE_OFF")
         if arm and rig.PHYSICS_PROP in arm:
             body.separator()
             body.prop(arm, f'["{rig.PHYSICS_PROP}"]', text="Physics", text_ctxt=i18n.CTX)  # checkbox
@@ -86,6 +85,47 @@ class STRINOVA_PT_panel(bpy.types.Panel):
                     sliders.prop(arm, f'["{prop}"]', text=label, slider=True)
         if not common.target_mesh(context):
             col.label(text="Select the mesh or its armature", icon="INFO")
+
+
+class STRINOVA_PT_lighting(bpy.types.Panel):
+    """Lighting of the selected character (its paper version and its weapon follow it)."""
+    bl_label = "Lighting"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Strinova"
+
+    @staticmethod
+    def character(context):
+        """The mesh of the selected character, or None. Selected, not only active: an object stays active
+        after it is deselected. Weapons follow their character's lighting."""
+        ob = context.active_object
+        mesh = common.target_mesh(context) if ob and ob.select_get() else None
+        return mesh if mesh and not mesh.get("st_weapon") and (
+            shading.lighting_source(mesh) or "ST Outline" in mesh.modifiers) else None
+
+    @classmethod
+    def poll(cls, context):
+        return cls.character(context) is not None
+
+    def draw(self, context):
+        col = self.layout.column()
+        mesh = self.character(context)
+        src = shading.lighting_source(mesh)
+        if src:
+            col.label(text=src.name, icon="MESH_DATA")
+            col.label(text="Lighting Type:")
+            col.row(align=True).prop(src, f'["{shading.LIGHTING_TYPE}"]', expand=True)
+            if src[shading.LIGHTING_TYPE]:
+                box = col.box().column()
+                box.label(text="Custom Colors", icon="COLOR")
+                for c in shading.COLORS:
+                    box.label(text=common.iface_(shading.ui_name(c)) + ":")
+                    box.prop(src, f'["st_{c}"]', text="")
+            for prop, text in (("st_rim_scale", "Rim Scale"), ("st_rim_extra", "Extra Rim"), ("st_shadow_softness", "Shadow Softness")):
+                col.prop(src, f'["{prop}"]', text=text, slider=True)
+        omod = mesh.modifiers.get("ST Outline")
+        if omod and omod.node_group:
+            col.prop(shading.mod_input(omod, "Width"), "value", text="Outline width")
 
 
 class STRINOVA_AddonPreferences(bpy.types.AddonPreferences):
@@ -101,7 +141,7 @@ class STRINOVA_AddonPreferences(bpy.types.AddonPreferences):
         self.layout.prop(self, "fmodel_dir")
 
 
-classes = importer.classes + weapon.classes + shading.classes + rig.classes + (STRINOVA_PT_panel, STRINOVA_AddonPreferences)
+classes = importer.classes + weapon.classes + shading.classes + rig.classes + (STRINOVA_PT_panel, STRINOVA_PT_lighting, STRINOVA_AddonPreferences)
 
 
 def register():

@@ -89,6 +89,7 @@ def attach(context, paper, host):
     for k in ("st_light", "st_head_origin", "st_head_forward", "st_head_up"):
         if isinstance(host.get(k), bpy.types.Object):
             paper[k] = host[k]
+    paper["st_light_host"] = host  # and its sidebar lighting settings
     return unmapped  # the importer adds the switch after the shading (its modifiers go last)
 
 

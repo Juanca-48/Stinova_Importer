@@ -100,7 +100,6 @@ Which model to use: each skin has the match model (Mesh3D) and the lobby one
 With the character (mesh or rig) selected, the panel shows a collapsible
 section with its name:
 
-- Outline width: thickness of the outline.
 - Paper version: switches between the 3D model and the paper one (see 8).
 - Show <accessory>: shows or hides each accessory (see 9).
 - Physics: turns physics on or off instantly. Animatable.
@@ -121,11 +120,21 @@ They are also in the rig's Object Properties > Custom Properties.
 - Outline: inverted hull ("ST Outline" modifier). No outline on the face and
   eyes, like in the game. Color: the base texture, darkened.
 - Lighting controls (rig bone collection "Lighting"):
-    * Wheels "Light" (the lit side) and "Ambient" (the shadow): the picker's
-      position sets hue and saturation; the bar, brightness.
+    * One wheel per color (see below): the picker's position sets hue and
+      saturation; the bar, intensity.
     * "ST Sun": light comes from this control toward the head and moves
       the shadows of the body and the face.
   They animate in the same action as the character.
+- "Lighting" section of the panel: shown while a character is selected, and
+  changes only that one (animatable; the paper version and the
+  connected weapon follow the character):
+    * Lighting Type: colors from the rig's wheels (Rig Panel) or from this
+      section, hiding the wheels (Parameter Panel): Ambient, Sharp Lit / Shadow (the toon edge), Soft Lit /
+      Shadow (a wide gradient) and Rim Lit / Shadow.
+    * Rim Scale: strength of the rim light. The game's data sets it in some
+      materials only; Extra Rim adds one to all of them.
+    * Shadow Softness: hard (0) to soft edge between light and shadow.
+    * Outline width.
 - Each character has its own sun and controls: two characters can be lit
   differently (one indoors and one outdoors).
 - The three head empties (ST_HeadOrigin / Forward / Up) give the head's
