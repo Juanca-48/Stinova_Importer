@@ -3,8 +3,11 @@ panel (HSV wheels + sun handle) and the inverted-hull outline.
 
 The shader reuses Gacha Setup's idea of light/head vectors stored as mesh attributes
 (lightDir, headForward, headUp).
-shortcut: shadow colour is a flat tint, not the game's RampID atlas; swap in ramps once exported.
-shortcut: only Mask1.R is used (4-matcap atlas quarter); Mask2 and the other channels are still unverified.
+Textures (channels read off the data and the game's captures): Mask1 = R ramp / matcap index or, in the old
+materials, the hair highlight; G and A where and how much matcap; B emission. Mask2 (PBR) = R metal,
+G roughness, A specular strength. MixTex (old) = R roughness, G metal.
+shortcut: the game's specular formulas aren't in the export (Spec1 / Spec2, Mask2's B, the environment
+reflection): a plain GGX highlight stands in for them. Revisit with captures.
 """
 import bpy, os, re, json, contextlib, functools, mathutils
 from math import cos, sin, tau  # imported by name: math() below is a node helper
@@ -255,8 +258,45 @@ def scaled_softness(nt, softness, x, y):
     return math(nt, "MAXIMUM", math(nt, "MULTIPLY", softness, packed(nt, "st_l_sharp_shadow", x, y)[1], x + 180, y), 0.0005, x + 360, y)
 
 
-def toon_mix(nt, lit, soft, ndl, normal, base, tint, rim, x, y):
-    """Lit side = base * sharp lit, shadow side = base * shadow tint * sharp shadow (the toon edge); then
+RAMPS, RAMP_W, RAMP_EDGE = "ST Ramps", 512, 0.53  # RAMP_EDGE: where most ramps turn from shadow to light
+
+
+def ramp_image():
+    """The game's 27 shadow ramps (ramps.json, colour stops), one per row: row 0 at the bottom."""
+    img = bpy.data.images.get(RAMPS)
+    if img:
+        return img
+    with open(os.path.join(os.path.dirname(__file__), "ramps.json"), encoding="utf-8") as fh:
+        ramps = json.load(fh)
+    pixels = []
+    for stops in ramps:
+        for a, b in zip(stops, stops[1:]):
+            for i in range(a[0], b[0]):
+                t = (i - a[0]) / (b[0] - a[0])
+                pixels += [(u + (v - u) * t) / 255 for u, v in zip(a[1:], b[1:])] + [1.0]
+        pixels += [c / 255 for c in stops[-1][1:]] + [1.0]
+    img = bpy.data.images.new(RAMPS, RAMP_W, len(ramps))
+    img.pixels.foreach_set(pixels)
+    img.pack()  # saved in the .blend: it has no file
+    return img
+
+
+def ramp_color(nt, u, ramp_id, softness, x, y):
+    """Colour of ramp `ramp_id` at `u` (0 shadow, 1 light). The panel's softness stretches the edge."""
+    img = ramp_image()
+    u = math(nt, "ADD", math(nt, "DIVIDE", math(nt, "SUBTRACT", u, RAMP_EDGE, x, y), softness, x + 180, y), RAMP_EDGE, x + 360, y)
+    row = math(nt, "DIVIDE", math(nt, "ADD", ramp_id, 0.5, x, y - 200), float(img.size[1]), x + 180, y - 200)
+    uv = node(nt, "ShaderNodeCombineXYZ", x + 540, y)
+    nt.links.new(u, uv.inputs[0])
+    nt.links.new(row, uv.inputs[1])
+    t = node(nt, "ShaderNodeTexImage", x + 900, y, image=img, extension="EXTEND", interpolation="Closest")
+    nt.links.new(uv.outputs[0], t.inputs["Vector"])
+    return t.outputs["Color"]
+
+
+def toon_mix(nt, lit, soft, ndl, normal, base, tint, rim, x, y, ramp=None):
+    """Lit side = base * sharp lit, shadow side = base * shadow tint * sharp shadow (the toon edge; with a
+    `ramp` colour instead of a tint, base * ramp on both); then
     the soft colours (the wide gradient `soft`), the ambient colour over everything and the rim light.
     rim: {RIM_INPUTS name: socket}, or None."""
     with section(nt, "Panel colours (rig wheels or sidebar)", "color"):
@@ -266,8 +306,9 @@ def toon_mix(nt, lit, soft, ndl, normal, base, tint, rim, x, y):
         ambient, sharp_lit, soft_lit, sharp_shadow, soft_shadow, rim_lit, rim_shadow = (
             panel_color(nt, c, mode, x, y + 600 - 250 * i) for i, c in enumerate(COLORS))
     with section(nt, "Light / shadow mix", "color"):
-        shadow = mix_rgb(nt, "MULTIPLY", 1.0, mix_rgb(nt, "MULTIPLY", 1.0, base, tint, x, y - 100), sharp_shadow, x + 150, y - 100)
-        col = mix_rgb(nt, "MIX", lit, shadow, mix_rgb(nt, "MULTIPLY", 1.0, base, sharp_lit, x, y + 100), x + 300, y)
+        shadow = mix_rgb(nt, "MULTIPLY", 1.0, base, tint if ramp is None else ramp, x, y - 100)
+        col = mix_rgb(nt, "MULTIPLY", 1.0, base if ramp is None else shadow, sharp_lit, x, y + 100)
+        col = mix_rgb(nt, "MIX", lit, mix_rgb(nt, "MULTIPLY", 1.0, shadow, sharp_shadow, x + 150, y - 100), col, x + 300, y)
         col = mix_rgb(nt, "MULTIPLY", 1.0, col, mix_rgb(nt, "MIX", soft, soft_shadow, soft_lit, x + 450, y - 200, clamp=False), x + 600, y)
         col = mix_rgb(nt, "MULTIPLY", 1.0, col, ambient, x + 750, y)
     with section(nt, "Rim light", "light"):
@@ -314,9 +355,10 @@ def shader_out(nt, color, alpha, out_node, x, y):
 
 
 # ---------- node groups ----------
-GROUP_VERSION = 6  # bump when a group changes; 2 = colours and light objects per character (and the outline
+GROUP_VERSION = 10  # bump when a group changes; 2 = colours and light objects per character (and the outline
 #   group's first version mark: older unmarked ST Outline groups, without the no-COL0 fallback, get rebuilt);
-#   3 = matcap UV without Vector Transform (broken in Blender 5.3); 6 = panel colours, shadow softness, rim
+#   3 = matcap UV without Vector Transform (broken in Blender 5.3); 6 = panel colours, shadow softness, rim;
+#   10 = the game's shadow ramps, specular, hair highlight
 
 
 def shared_group(name, typ, version=None):
@@ -387,6 +429,35 @@ RIM_SCALARS = {"Rim Intensity": "RimLightIntensity", "Rim Exponent": "RimFresnel
                "Rim Range": "RimRange", "Rim Dot Scale": "RimDotScale"}
 
 
+def matcap_channel(nt, mc, mask, x, y):
+    """A single-channel matcap texture holds four grey matcaps, one per channel (R, G, B, A); Mask1's red
+    picks it in four steps, like the quarters of an atlas. Without a mask, the first."""
+    sep = node(nt, "ShaderNodeSeparateColor", x, y)
+    nt.links.new(mc.outputs["Color"], sep.inputs[0])
+    out = sep.outputs[0]
+    if mask:
+        red = node(nt, "ShaderNodeSeparateColor", x, y - 200)
+        nt.links.new(mask.outputs["Color"], red.inputs[0])
+        for i, ch in enumerate((sep.outputs[1], sep.outputs[2], mc.outputs["Alpha"]), 1):
+            out = mix_rgb(nt, "MIX", math(nt, "GREATER_THAN", red.outputs[0], i / 4 - 0.001, x + 180 * i, y - 200), out, ch, x + 180 * i, y)
+    return out
+
+
+def specular(nt, N, L, V, base, gi, lit, x, y):
+    """GGX highlight of the sun on the lit side: metal tints it with the base colour."""
+    H = vmath(nt, "NORMALIZE", vmath(nt, "ADD", L, V, x, y).outputs[0], None, x + 180, y).outputs[0]
+    nh = math(nt, "MAXIMUM", vmath(nt, "DOT_PRODUCT", N, H, x + 360, y).outputs["Value"], 0.0, x + 540, y)
+    a = math(nt, "MAXIMUM", math(nt, "POWER", gi.outputs["Roughness"], 2.0, x, y - 200), 0.04, x + 180, y - 200)
+    a2 = math(nt, "MULTIPLY", a, a, x + 360, y - 200)
+    d = math(nt, "MULTIPLY_ADD", math(nt, "MULTIPLY", nh, nh, x + 720, y), math(nt, "SUBTRACT", a2, 1.0, x + 540, y - 200), x + 900, y)
+    nt.nodes[-1].inputs[2].default_value = 1.0
+    ggx = math(nt, "DIVIDE", a2, math(nt, "MULTIPLY", math(nt, "MULTIPLY", d, d, x + 1080, y), 4 * 3.14159, x + 1260, y), x + 1440, y)
+    amt = math(nt, "MULTIPLY", math(nt, "MULTIPLY", math(nt, "MINIMUM", ggx, 5.0, x + 1620, y), lit, x + 1800, y),
+               gi.outputs["Specular"], x + 1980, y)
+    f0 = mix_rgb(nt, "MIX", gi.outputs["Metallic"], (0.08, 0.08, 0.08, 1.0), base, x + 1620, y - 250)
+    return mix_rgb(nt, "MULTIPLY", 1.0, f0, amt, x + 2160, y - 100, clamp=False)
+
+
 def build_toon_group():
     ng, built = shared_group("ST Toon", "ShaderNodeTree")
     if built:
@@ -396,12 +467,18 @@ def build_toon_group():
     sock(ng, "Base Color", "INPUT", "NodeSocketColor", (1, 1, 1, 1))
     sock(ng, "Alpha", "INPUT", "NodeSocketFloat", 1.0)
     sock(ng, "Normal", "INPUT", "NodeSocketVector").hide_value = True  # always linked by setup_material
-    sock(ng, "Shadow Tint", "INPUT", "NodeSocketColor", SHADOW_TINT)
+    sock(ng, "Ramp ID", "INPUT", "NodeSocketFloat", 1.0)
     sock(ng, "Middle Value", "INPUT", "NodeSocketFloat", 0.15)
     sock(ng, "Softness", "INPUT", "NodeSocketFloat", 0.03)
     sock(ng, "MatCap", "INPUT", "NodeSocketColor", (0, 0, 0, 1))
     sock(ng, "MatCap Pow", "INPUT", "NodeSocketFloat", 0.0)
     sock(ng, "Emission", "INPUT", "NodeSocketColor", (0, 0, 0, 1))
+    sock(ng, "Metallic", "INPUT", "NodeSocketFloat", 0.0)
+    sock(ng, "Roughness", "INPUT", "NodeSocketFloat", 1.0)
+    sock(ng, "Specular", "INPUT", "NodeSocketFloat", 0.0)
+    sock(ng, "Highlight", "INPUT", "NodeSocketFloat", 0.0)
+    sock(ng, "View Limit", "INPUT", "NodeSocketFloat", 1.0)
+    sock(ng, "View Limit Blur", "INPUT", "NodeSocketFloat", 0.1)
     for name, (typ, default) in RIM_INPUTS.items():
         sock(ng, name, "INPUT", typ, default)
     nt = ng
@@ -415,13 +492,24 @@ def build_toon_group():
         lit = soft_step(nt, ndl, gi.outputs["Middle Value"], scaled_softness(nt, gi.outputs["Softness"], -700, -50), -200, 200)
         soft = math(nt, "MULTIPLY_ADD", ndl, 0.5, 0, 0)
         nt.nodes[-1].inputs[2].default_value = 0.5
+        # half Lambert with the ramp's middle at N.L = Middle Value (-99, eyes and brows: always lit)
+        u = math(nt, "MULTIPLY_ADD", math(nt, "SUBTRACT", ndl, gi.outputs["Middle Value"], 0, -200), 0.5, 180, -200)
+        nt.nodes[-1].inputs[2].default_value = 0.5
+        ramp = ramp_color(nt, u, gi.outputs["Ramp ID"], scaled_softness(nt, 1.0, -700, -400), 360, -200)
     with section(nt, "MatCap UV (camera-space normal)", "tex"):
         nt.links.new(matcap_uv(nt, N, -500, -250), go.inputs["MatCap UV"])
-    col = toon_mix(nt, lit, soft, ndl, N, gi.outputs["Base Color"], gi.outputs["Shadow Tint"],
-                   {k: gi.outputs[k] for k in RIM_INPUTS}, 100, 100)
+    col = toon_mix(nt, lit, soft, ndl, N, gi.outputs["Base Color"], None,
+                   {k: gi.outputs[k] for k in RIM_INPUTS}, 100, 100, ramp)
     with section(nt, "MatCap and emission", "color"):
         col = mix_rgb(nt, "ADD", gi.outputs["MatCap Pow"], col, gi.outputs["MatCap"], 450, 100)
         col = mix_rgb(nt, "ADD", 1.0, col, gi.outputs["Emission"], 600, 100)
+    with section(nt, "Specular and hair highlight", "light"):
+        view = node(nt, "ShaderNodeNewGeometry", 0, -900).outputs["Incoming"]
+        col = mix_rgb(nt, "ADD", 1.0, col, specular(nt, N, L, view, gi.outputs["Base Color"], gi, lit, 200, -900), 2600, -700)
+        # the hair's painted highlight, only where it faces the viewer: ViewLimit 1 (the default) = everywhere
+        nv = vmath(nt, "DOT_PRODUCT", N, view, 200, -1400).outputs["Value"]
+        facing = soft_step(nt, nv, math(nt, "SUBTRACT", 1.0, gi.outputs["View Limit"], 200, -1550), gi.outputs["View Limit Blur"], 400, -1400)
+        col = mix_rgb(nt, "ADD", 1.0, col, math(nt, "MULTIPLY", facing, gi.outputs["Highlight"], 900, -1400), 2800, -700)
     with section(nt, "Output (emission + transparency)", "out", extra=(go,)):
         shader_out(nt, col, gi.outputs["Alpha"], go, 650, -150)
     arrange_sections(nt)
@@ -437,7 +525,7 @@ def build_face_group():
     sock(ng, "Base Color", "INPUT", "NodeSocketColor", (1, 1, 1, 1))
     sock(ng, "Alpha", "INPUT", "NodeSocketFloat", 1.0)
     sock(ng, "SDF", "INPUT", "NodeSocketFloat", 1.0)
-    sock(ng, "Shadow Tint", "INPUT", "NodeSocketColor", SHADOW_TINT)
+    sock(ng, "Ramp ID", "INPUT", "NodeSocketFloat", 4.0)
     sock(ng, "Softness", "INPUT", "NodeSocketFloat", 0.01)
     sock(ng, "Flip Side", "INPUT", "NodeSocketFloat", 0.0)  # set 1 if shadow lands on the wrong side
     nt = ng
@@ -479,7 +567,10 @@ def build_face_group():
         lit = soft_step(nt, gi.outputs["SDF"], thr, scaled_softness(nt, gi.outputs["Softness"], -200, 250), 200, 450)
         soft = soft_step(nt, gi.outputs["SDF"], thr, 0.5, 200, 250)
         normal = node(nt, "ShaderNodeNewGeometry", 0, 100).outputs["Normal"]
-    col = toon_mix(nt, lit, soft, None, normal, gi.outputs["Base Color"], gi.outputs["Shadow Tint"], None, 400, 150)
+        u = math(nt, "MULTIPLY_ADD", math(nt, "SUBTRACT", gi.outputs["SDF"], thr, 200, 50), 3.0, 380, 50)
+        nt.nodes[-1].inputs[2].default_value = RAMP_EDGE
+        ramp = ramp_color(nt, u, gi.outputs["Ramp ID"], scaled_softness(nt, 1.0, -200, -300), 560, 50)
+    col = toon_mix(nt, lit, soft, None, normal, gi.outputs["Base Color"], None, None, 400, 150, ramp)
     with section(nt, "Output (emission + transparency)", "out", extra=(go,)):
         shader_out(nt, col, gi.outputs["Alpha"], go, 650, -300)
     arrange_sections(nt)
@@ -669,10 +760,10 @@ def follow_settings(mesh, host):
 
 
 def lighting_source(mesh):
-    """The character mesh whose settings light `mesh`: a paper version's or a weapon's host, or itself.
-    None for a weapon with its own light or a mesh shaded before these settings existed."""
+    """The mesh whose settings light `mesh`: a paper version's or a held weapon's character, a loose
+    weapon's main mesh, or itself. None for a mesh shaded before these settings existed."""
     if mesh and (mesh.get("st_weapon") or mesh.get("st_light_host")):
-        mesh = mesh.get("st_weapon_host") or mesh.get("st_light_host")
+        mesh = mesh.get("st_weapon_host") or mesh.get("st_weapon_lead") or mesh.get("st_light_host")
     return mesh if isinstance(mesh, bpy.types.Object) and LIGHTING_TYPE in mesh else None
 
 
@@ -751,6 +842,27 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
     g_uv = node(nt, "ShaderNodeGroup", -500, -350, node_tree=g.node_tree, label="UV only")
     used = [os.path.basename(base_p)]
     normal, normal_label, extra_tex = [], "Normal", []  # nodes to frame at the end
+    # the ramp: one for the material, or per pixel in Mask1's red, in steps of 0.1 (decoded from 287
+    # masks: faces 4, hair 10, skin 4 / 5 / 7; 0.06 = slack for the texture compression)
+    mask, mask_p = None, pick(tex_idx, t.get("Mask1", ""), skin)
+
+    def mask1():
+        nonlocal mask
+        if not mask:
+            mask = tex(nt, mask_p, "Non-Color", -900, -700)
+            mask.image.alpha_mode = "CHANNEL_PACKED"  # A is data: not to be multiplied into the colour
+            mask.interpolation = "Closest"  # its steps are indices: no blending across them
+            used.append(os.path.basename(mask_p))
+        return mask
+
+    if sw.get("RampIDFromTex") and mask_p:
+        red = node(nt, "ShaderNodeSeparateColor", -600, -1100)
+        nt.links.new(mask1().outputs["Color"], red.inputs[0])
+        ramp_id = math(nt, "MULTIPLY_ADD", red.outputs[0], 10.0, -400, -1100)
+        nt.nodes[-1].inputs[2].default_value = 0.06
+        nt.links.new(math(nt, "FLOOR", ramp_id, None, -200, -1100), g.inputs["Ramp ID"])
+    else:
+        g.inputs["Ramp ID"].default_value = max(0.0, min(26.0, sca.get("RampID", 1.0)))
     if is_face:
         sdf_p = pick(tex_idx, t["FaceShadowMask"], skin)
         if sdf_p:
@@ -775,25 +887,59 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
         # a 4-matcap atlas needs Mask1 to pick each pixel's quarter; without it the whole atlas would
         # tint the character, so no matcap
         atlas = sw.get("NeedMatCap4text")
-        mask_p = pick(tex_idx, t.get("Mask1", ""), skin) if mc_p and atlas else None
-        if mc_p and (mask_p or not atlas):
+        mc_mask = mask_p and (atlas or sw.get("NeedMask1"))
+        if mc_p and (mc_mask or not atlas):
             uv = g_uv.outputs["MatCap UV"]
-            if mask_p:
-                mask = tex(nt, mask_p, "Non-Color", -900, -700)
-                mask.interpolation = "Closest"  # its steps are matcap indices: no blending across them
-                uv = matcap_quadrant(nt, uv, mask, -700, -700)
-                used.append(os.path.basename(mask_p))
-            mc = tex(nt, mc_p, "sRGB", -200, -450, uv)
-            nt.links.new(mc.outputs["Color"], g.inputs["MatCap"])
-            g.inputs["MatCap Pow"].default_value = sca.get("MatCapPow", 0.0)
+            power = sca.get("MatCapPow", 0.0)
+            if mc_mask and atlas:
+                uv = matcap_quadrant(nt, uv, mask1(), -700, -700)
+            single = sw.get("UseMatCapSingleChanel")
+            mc = tex(nt, mc_p, "Non-Color" if single else "sRGB", -200, -450, uv)
+            nt.links.new(matcap_channel(nt, mc, mask1() if mc_mask else None, 100, -700) if single else mc.outputs["Color"], g.inputs["MatCap"])
+            g.inputs["MatCap Pow"].default_value = power
+            if mc_mask:  # G: where the matcap goes, A: how much. Checked on Eika S211: without it the blacks wash out
+                where = node(nt, "ShaderNodeSeparateColor", -600, -900)
+                nt.links.new(mask1().outputs["Color"], where.inputs[0])
+                amount = math(nt, "MULTIPLY", where.outputs[1], mask.outputs["Alpha"], -400, -900)
+                nt.links.new(math(nt, "MULTIPLY", amount, power, -200, -900), g.inputs["MatCap Pow"])
             used.append(os.path.basename(mc_p))
             extra_tex = [("MatCap (brillo / reflejo)", mc)]
-        # EmissiveColor is a leftover default in ~700 materials; the game only uses it behind the
-        # EnableEmissive static switch (otherwise it whites out e.g. Chiyo S105, Aika S207 face).
-        # shortcut: applied unmasked; find the emission mask channel if a material glows too much.
-        e = cols.get("EmissiveColor") if sw.get("EnableEmissive") else None
-        if e:
-            g.inputs["Emission"].default_value = (e["R"], e["G"], e["B"], 1)
+        # EmissiveColor is masked by Mask1's blue (flames, gems, painted hair highlights of the newer skins).
+        # Without a mask it is a leftover default in many materials (it would white out e.g. Chiyo S105),
+        # used only behind the EnableEmissive static switch.
+        e = cols.get("EmissiveColor")
+        e = e and (max(e["R"], 0.0), max(e["G"], 0.0), max(e["B"], 0.0), 1.0)
+        if e and any(e[:3]) and mask_p:
+            blue = node(nt, "ShaderNodeSeparateColor", -600, -1300)
+            nt.links.new(mask1().outputs["Color"], blue.inputs[0])
+            nt.links.new(mix_rgb(nt, "MULTIPLY", 1.0, e, blue.outputs[2], -400, -1300, clamp=False), g.inputs["Emission"])
+        elif e and sw.get("EnableEmissive"):
+            g.inputs["Emission"].default_value = e
+        # the old materials paint the hair highlight in Mask1's red (elsewhere an index)
+        power = sca.get("HightLightPow", 0.0)
+        if power > 0 and mask_p and not (sw.get("RampIDFromTex") or atlas or sw.get("UseMatCapSingleChanel")):
+            red = node(nt, "ShaderNodeSeparateColor", -600, -1500)
+            nt.links.new(mask1().outputs["Color"], red.inputs[0])
+            # the painted highlights are white: a flat lower value (Kanami S113's 0.61) is a ramp index
+            white = soft_step(nt, red.outputs[0], 0.85, 0.15, -400, -1500)
+            nt.links.new(math(nt, "MULTIPLY", white, power, 0, -1500), g.inputs["Highlight"])
+            g.inputs["View Limit"].default_value = sca.get("ViewLimit", 1.0)
+            g.inputs["View Limit Blur"].default_value = max(0.001, sca.get("ViewLimitBlur", 0.1))
+        # metal / roughness / strength
+        mix_p = pick(tex_idx, t.get("MixTex", ""), skin) if sw.get("UseMetallicTex") or sw.get("UseRoughnessTex") else None
+        m2_p = pick(tex_idx, t.get("Mask2", ""), skin) if sw.get("PBR") and sw.get("NeedMask2") else None
+        if m2_p or mix_p:
+            pbr = tex(nt, m2_p or mix_p, "Non-Color", -900, -1700)
+            used.append(os.path.basename(m2_p or mix_p))
+            sep = node(nt, "ShaderNodeSeparateColor", -600, -1700)
+            nt.links.new(pbr.outputs["Color"], sep.inputs[0])
+            nt.links.new(sep.outputs[0 if m2_p else 1], g.inputs["Metallic"])
+            nt.links.new(sep.outputs[1 if m2_p else 0], g.inputs["Roughness"])
+            if m2_p:
+                pbr.image.alpha_mode = "CHANNEL_PACKED"
+                nt.links.new(pbr.outputs["Alpha"], g.inputs["Specular"])
+            else:
+                g.inputs["Specular"].default_value = max(0.0, min(1.0, sca.get("Spec1_Intensity", 1.0)))
     # sections in data-flow order: textures -> computed UVs -> UV-driven textures -> shading -> output
     frame(nt, "Base texture (colour + alpha)", "tex", [base])
     frame(nt, normal_label, "tex", normal)
@@ -983,7 +1129,7 @@ def merge_panel(context, pan, rig):
 
 def picker_bone(arm, name):
     """The picker bone of a colour in `arm` (characters imported up to 1.2 have two, with other names)."""
-    return next((b for b in (f"ST {name}", LEGACY_BONES.get(name)) if b and b in arm.data.bones), None)
+    return arm and next((b for b in (f"ST {name}", LEGACY_BONES.get(name)) if b and b in arm.data.bones), None)
 
 
 def bind_lighting(context, arm, char_arm, mesh):
@@ -1378,11 +1524,10 @@ def _cached_index(root):
     return index_files(root)  # SkinAssets: ~20k files, ~1 s to walk
 
 
-def shade_weapon(context, meshes, assets_root, host=None):
-    """Toon shading for a weapon's meshes. Lit by `host` (a character mesh: its sun and its panel
-    colours, so the weapon matches the hand) or, without one, by a sun of its own."""
+def shade_weapon(context, meshes, assets_root):
+    """Toon shading for a weapon's meshes, lit on their own until connected to a hand."""
     weapon_g = build_weapon_group()
-    light_weapon(meshes, host)
+    light_weapon(meshes)
 
     def shade(tex_idx, json_idx):
         report = {}
@@ -1415,30 +1560,36 @@ def shade_weapon(context, meshes, assets_root, host=None):
 
 
 def light_weapon(meshes, host=None):
-    """Light a weapon's meshes with `host`'s sun and panel colours (a character mesh), or, without
-    one, with a sun of their own and white light. Called on import and again when the weapon is
-    connected to a character's hand."""
-    if not (host and isinstance(host.get("st_light"), bpy.types.Object)):
-        host = None
+    """Light a weapon's meshes: with `host`'s sun and panel (the character whose hand holds it) or, on its
+    own, with a sun and sidebar settings of its own, kept while it is in a hand. Called on import and when
+    the weapon is connected or disconnected."""
+    host = host if host and isinstance(host.get("st_light"), bpy.types.Object) else None
+    lead = next((m for m in meshes if isinstance(m.get("st_own_light"), bpy.types.Object)), meshes[0])
 
-        def new_sun():
-            ob = bpy.data.objects.new(f"ST_Light {meshes[0].name}", bpy.data.lights.new(f"ST_Light {meshes[0].name}", "SUN"))
-            ob.rotation_euler = (0.9, 0.0, -0.5)  # front, above, slightly to the side
-            meshes[0].users_collection[0].objects.link(ob)
-            return ob
+    def new_sun():
+        ob = bpy.data.objects.new(f"ST_Light {lead.name}", bpy.data.lights.new(f"ST_Light {lead.name}", "SUN"))
+        ob.rotation_euler = (0.9, 0.0, -0.5)  # front, above, slightly to the side
+        lead.users_collection[0].objects.link(ob)
+        return ob
 
-    sun = host["st_light"] if host else own(meshes[0], "st_light", new_sun)
-    for m in meshes:
-        m["st_light"] = sun
-        m["st_weapon"] = True
+    sun = own(lead, "st_own_light", new_sun)
+    sun.hide_viewport = sun.hide_render = bool(host)  # unused while in a hand
+    if LIGHTING_TYPE not in lead:
+        ensure_settings(lead)
+        lead[LIGHTING_TYPE] = 1  # no wheels: always the sidebar's colours
+    for m in [lead] + [m for m in meshes if m != lead]:
+        m["st_light"] = host["st_light"] if host else sun
+        m["st_weapon"], m["st_weapon_lead"] = True, lead
         if host:
-            m["st_weapon_host"] = host  # a weapon picked later as the light source passes on this one
+            m["st_weapon_host"] = host
         elif "st_weapon_host" in m:
             del m["st_weapon_host"]
         mod = m.modifiers.get("ST Light Vectors") or m.modifiers.new("ST Light Vectors", "NODES")
         mod.node_group = build_vectors_gn()
-        mod_input(mod, "Sun").value = sun
-        follow_settings(m, host)
+        mod_input(mod, "Sun").value = m["st_light"]
+        follow_settings(m, host or (None if m == lead else lead))
+    if not host:
+        bind_settings(lead, None)
 
 
 @contextlib.contextmanager

@@ -88,7 +88,7 @@ class STRINOVA_PT_panel(bpy.types.Panel):
 
 
 class STRINOVA_PT_lighting(bpy.types.Panel):
-    """Lighting of the selected character (its paper version and its weapon follow it)."""
+    """Lighting of the selected character (its paper version and the weapon it holds follow it) or loose weapon."""
     bl_label = "Lighting"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
@@ -97,11 +97,11 @@ class STRINOVA_PT_lighting(bpy.types.Panel):
     @staticmethod
     def character(context):
         """The mesh of the selected character, or None. Selected, not only active: an object stays active
-        after it is deselected. Weapons follow their character's lighting."""
+        after it is deselected. A weapon in a hand follows its character's lighting: not shown."""
         ob = context.active_object
         mesh = common.target_mesh(context) if ob and ob.select_get() else None
-        return mesh if mesh and not mesh.get("st_weapon") and (
-            shading.lighting_source(mesh) or "ST Outline" in mesh.modifiers) else None
+        return mesh if mesh and not mesh.get("st_weapon_host") and (
+            shading.lighting_source(mesh) or "ST Outline" in mesh.modifiers and not mesh.get("st_weapon")) else None
 
     @classmethod
     def poll(cls, context):
@@ -113,8 +113,9 @@ class STRINOVA_PT_lighting(bpy.types.Panel):
         src = shading.lighting_source(mesh)
         if src:
             col.label(text=src.name, icon="MESH_DATA")
-            col.label(text="Lighting Type:")
-            col.row(align=True).prop(src, f'["{shading.LIGHTING_TYPE}"]', expand=True)
+            if not src.get("st_weapon"):  # weapons have no wheels
+                col.label(text="Lighting Type:")
+                col.row(align=True).prop(src, f'["{shading.LIGHTING_TYPE}"]', expand=True)
             if src[shading.LIGHTING_TYPE]:
                 box = col.box().column()
                 box.label(text="Custom Colors", icon="COLOR")
@@ -124,7 +125,7 @@ class STRINOVA_PT_lighting(bpy.types.Panel):
             for prop, text in (("st_rim_scale", "Rim Scale"), ("st_rim_extra", "Extra Rim"), ("st_shadow_softness", "Shadow Softness")):
                 col.prop(src, f'["{prop}"]', text=text, slider=True)
         omod = mesh.modifiers.get("ST Outline")
-        if omod and omod.node_group:
+        if omod and omod.node_group and not mesh.get("st_weapon"):  # a weapon's is in its own section
             col.prop(shading.mod_input(omod, "Width"), "value", text="Outline width")
 
 

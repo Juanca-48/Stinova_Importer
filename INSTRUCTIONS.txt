@@ -116,7 +116,13 @@ They are also in the rig's Object Properties > Custom Properties.
 
 - Materials are rebuilt from the textures and the material data (bundled
   with the add-on, or FModel's .json files if present): toon with sunlight,
-  face with soft shadow (SDF), normal map and matcap.
+  face with soft shadow (SDF), normal map and matcap. From the game's data:
+    * Shadow color: the game's 27 ramps, one per material or per area (skin,
+      hair, cloth...). They are kept in the "ST Ramps" image, inside the .blend.
+    * Matcap: only where the material's mask says, and as strong as it says.
+    * Emission: only the parts the mask marks (flames, gems...).
+    * Hair highlight: the painted strands, where they face the camera.
+    * Metal and specular: from the material's textures (beta, see section 11).
 - Outline: inverted hull ("ST Outline" modifier). No outline on the face and
   eyes, like in the game. Color: the base texture, darkened.
 - Lighting controls (rig bone collection "Lighting"):
@@ -127,7 +133,8 @@ They are also in the rig's Object Properties > Custom Properties.
   They animate in the same action as the character.
 - "Lighting" section of the panel: shown while a character is selected, and
   it changes only that one (the active one, if there are several). Its paper
-  version and its weapon follow it:
+  version and the weapon it holds follow it. A loose weapon has a Lighting
+  section of its own (without the rig's wheels):
     * Lighting Type: where the colors come from. Rig Panel: the wheels in the
       rig. Parameter Panel: this section, and the wheels are hidden. Each one
       keeps its own colors.
@@ -140,8 +147,8 @@ They are also in the rig's Object Properties > Custom Properties.
       some materials only, usually a subtle one.
     * Extra Rim: a rim for every material, not from the game (0 = off; 0.3-0.5
       is already noticeable).
-    * Shadow Softness: edge between light and shadow, from hard (0) to soft
-      (1 = default).
+    * Shadow Softness: edge between light and shadow, from hard (0) to soft.
+      1 = the game's ramp as it is.
     * Outline width: thickness of the outline.
 - Characters imported with 1.2 or earlier keep their two wheels (Light and
   Ambient, now called Sharp Lit and Sharp Shadow) and their shading until they
@@ -272,10 +279,9 @@ panel's "Weapons" section. Importing a character never brings its weapon.
 - With "Apply Toon Shading" checked, the weapon gets the add-on's toon: the
   same light and shadow as the characters, a matcap shine where the weapon
   is polished metal, and its outline. Sight lenses become translucent glass.
-- Lighting: if a character is selected when importing (or a weapon already
-  using its light), the weapon uses that character's sun and panel colors,
-  so it matches when you put it in their hand. Otherwise it creates its own
-  sun.
+- Lighting: each weapon comes with its own sun and its own settings in the
+  Lighting section, so it works as a prop. Connected to a character it takes
+  that character's light, and disconnecting it brings back its own.
 - Textures are looked up in FModel's SkinAssets folder: next to the model if
   it comes from FModel. For a weapon kept elsewhere (an .fbx), like a
   character: in its own folder and the folders above it (the nearest one
@@ -329,11 +335,19 @@ panel's "Weapons" section. Importing a character never brings its weapon.
 11. KNOWN LIMITATIONS
 ---------------------
 
-- The shadow is a fixed tint, not the game's color ramps.
+- Characters use the game's shadow color ramps; weapons keep a fixed tint.
 - The game's rim light formula isn't in its data: it is read from the
   parameters' names and may not match every skin.
-- Not done yet: the game's highlights (specular), the hair's shadow on the
-  face and the characters' metal materials.
+- Beta: the game's specular formula isn't in its data, so metal and shiny
+  materials use a generic highlight. Not done yet: environment reflections and
+  the hair's shadow on the face.
+- Characters already in a scene keep their shading until imported again.
+- A weapon imported with 1.3 or earlier keeps the light it had. Connecting and
+  disconnecting it, or importing it again, gives it its own.
+- A weapon's sun starts at the scene's origin: only its rotation matters. A
+  copy made with Shift+D shares the original's sun.
+- A connected weapon keeps the character's light even while its right hand
+  switch is off.
 - An .fbx exported with tools other than Blender may come with another
   scale or with the bone axes changed.
 - Physics doesn't react to moving the root bone or to lifting the legs.
@@ -357,4 +371,5 @@ Modules (strinova_toon folder):
                 English; a new UI string needs its line here.
   migrate.py    Renames what older versions created with Spanish names.
   materials.json  Data for every character and weapon material.
+  ramps.json    The game's shadow ramps, as color stops.
   __init__.py   Panel and registration.

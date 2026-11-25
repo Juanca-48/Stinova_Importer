@@ -119,7 +119,14 @@ También están en Object Properties > Custom Properties del rig.
 
 - Los materiales se reconstruyen con las texturas y los datos de material
   (incluidos en el add-on, o los .json de FModel si están): toon con luz
-  del sol, cara con sombra suave (SDF), normal map y matcap.
+  del sol, cara con sombra suave (SDF), normal map y matcap. De los datos
+  del juego:
+    * Color de la sombra: las 27 rampas del juego, una por material o por zona
+      (piel, pelo, tela...). Van en la imagen "ST Ramps", dentro del .blend.
+    * Matcap: solo donde marca la máscara del material, y con esa fuerza.
+    * Emisión: solo las partes que marca la máscara (llamas, gemas...).
+    * Brillo del pelo: los mechones pintados, donde miran a la cámara.
+    * Metal y especular: de las texturas del material (beta, ver sección 11).
 - Contorno: casco invertido (modificador "ST Outline"). Sin contorno en cara
   y ojos, como en el juego. Color: la textura base oscurecida.
 - Controles de iluminación (colección de huesos "Lighting" del rig):
@@ -130,8 +137,9 @@ También están en Object Properties > Custom Properties del rig.
       sombras del cuerpo y de la cara.
   Se animan en la misma acción que el personaje.
 - Sección "Iluminación" del panel: aparece con un personaje seleccionado y
-  solo cambia ese (el activo, si hay varios). Su versión de papel y su arma lo
-  siguen:
+  solo cambia ese (el activo, si hay varios). Su versión de papel y el arma que
+  lleva lo siguen. Un arma suelta tiene su propia sección Iluminación (sin las
+  ruedas del rig):
     * Tipo de iluminación: de dónde salen los colores. Panel del rig: las
       ruedas del rig. Panel de parámetros: esta sección, y las ruedas se
       ocultan. Cada uno guarda sus propios colores.
@@ -144,8 +152,8 @@ También están en Object Properties > Custom Properties del rig.
       la dan a algunos materiales, y suele ser sutil.
     * Borde extra: un borde para todos los materiales, que no viene del juego
       (0 = apagado; con 0.3-0.5 ya se nota).
-    * Suavidad de la sombra: corte entre luz y sombra, de duro (0) a suave
-      (1 = por defecto).
+    * Suavidad de la sombra: corte entre luz y sombra, de duro (0) a suave.
+      1 = la rampa del juego tal cual.
     * Grosor contorno: grosor de la línea del contorno.
   En la escena las ruedas llevan el nombre en inglés: Ambient, Sharp Lit, Sharp
   Shadow, Soft Lit, Soft Shadow, Rim Lit y Rim Shadow.
@@ -281,10 +289,9 @@ Las armas se importan aparte, con el botón "Importar arma" de la sección
   misma luz y sombra que los personajes, un brillo de matcap donde el arma
   es metal pulido y su contorno. Las lentes de las miras quedan como cristal
   translúcido.
-- Iluminación: si al importar tienes seleccionado un personaje (o un arma
-  que ya usa su luz), el arma usa el sol y los colores del panel de ese
-  personaje, así combina cuando la pongas en su mano. Si no, crea su
-  propio sol.
+- Iluminación: cada arma trae su propio sol y sus propios ajustes en la
+  sección Iluminación, así sirve como prop. Al conectarla a un personaje toma
+  la luz de ese personaje, y al desconectarla recupera la suya.
 - Las texturas se buscan en la carpeta SkinAssets de FModel: junto al
   modelo si viene de FModel. Para un arma guardada en otro sitio (un .fbx),
   igual que un personaje: en su propia carpeta y en las de encima (la más
@@ -340,11 +347,21 @@ Las armas se importan aparte, con el botón "Importar arma" de la sección
 11. LIMITACIONES CONOCIDAS
 --------------------------
 
-- La sombra es un tinte fijo, no las rampas de color del juego.
+- Los personajes usan las rampas de color de sombra del juego; las armas
+  conservan un tinte fijo.
 - La fórmula de la luz de borde del juego no está en sus datos: se deduce de
   los nombres de los parámetros y puede no coincidir en todas las skins.
-- Aún sin hacer: los brillos (especular) del juego, la sombra del pelo en la
-  cara y los materiales metálicos de los personajes.
+- Beta: la fórmula del especular del juego no está en sus datos, así que el
+  metal y los materiales brillantes usan un brillo genérico. Aún sin hacer: los
+  reflejos del entorno y la sombra del pelo en la cara.
+- Los personajes que ya están en una escena conservan su shading hasta volver a
+  importarlos.
+- Un arma importada con la 1.3 o anterior conserva la luz que tenía. Al
+  conectarla y desconectarla, o al volver a importarla, tiene la suya propia.
+- El sol de un arma empieza en el origen de la escena: solo cuenta su rotación.
+  Una copia hecha con Shift+D comparte el sol de la original.
+- Un arma conectada sigue con la luz del personaje aunque apagues su
+  interruptor de la mano derecha.
 - Un .fbx exportado con herramientas distintas a Blender puede venir con otra
   escala o con los ejes de los huesos cambiados.
 - La física no reacciona al mover el hueso root ni al levantar las piernas.
@@ -369,4 +386,5 @@ Módulos (carpeta strinova_toon):
   migrate.py    Renombra lo que crearon versiones anteriores con nombres en
                 español.
   materials.json  Datos de todos los materiales de personajes y armas.
+  ramps.json    Las rampas de sombra del juego, como puntos de color.
   __init__.py   Panel y registro.

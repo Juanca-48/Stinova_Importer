@@ -398,10 +398,14 @@ def connect(context, arm, rig):
     # light it like the character, so it matches the hand
     host = next((m for m in bpy.data.objects if m.type == "MESH" and m.find_armature() == rig
                  and m.get("st_light") and not m.get("st_paper")), None)
-    meshes = [m for m in bpy.data.objects if m.type == "MESH" and m.get("st_weapon") and weapon_rig(m) == arm]
-    if host and meshes:
+    meshes = shaded_meshes(arm)
+    if meshes:
         shading.light_weapon(meshes, host)
     return host
+
+
+def shaded_meshes(arm):
+    return [m for m in bpy.data.objects if m.type == "MESH" and m.get("st_weapon") and weapon_rig(m) == arm]
 
 
 # ---------- left hand: a grip that slides along the weapon ----------
@@ -643,6 +647,9 @@ class STRINOVA_OT_weapon_release(bpy.types.Operator):
         arm = weapon_rig(context.active_object)
         rig = connected(arm)
         disconnect(arm)
+        meshes = shaded_meshes(arm)
+        if meshes:
+            shading.light_weapon(meshes)  # its own light again
         self.report({"INFO"}, rpt_("{} out of the hand of {}").format(arm.name, rig.name))
         return {"FINISHED"}
 
@@ -680,11 +687,6 @@ class STRINOVA_OT_import_weapon(bpy.types.Operator, ImportHelper):
             self.report({"ERROR"}, rpt_("UEFormat is not enabled: enable it or import the weapon as .fbx"))
             return {"CANCELLED"}
         common.remember_fmodel(files[0])
-        # light the weapon like the selected character (its sun and colours), else with its own sun
-        host = common.target_mesh(context)
-        if host and host.get("st_weapon"):  # a weapon selected: the character that lights it
-            host = host.get("st_weapon_host")
-        host = host if host and host.get("st_light") and not host.get("st_paper") else None
         if context.mode != "OBJECT":
             bpy.ops.object.mode_set(mode="OBJECT")
         # own collection, active while importing, like a character (see importer.execute)
@@ -727,11 +729,11 @@ class STRINOVA_OT_import_weapon(bpy.types.Operator, ImportHelper):
         if meshes and context.scene.strinova_do_shading:
             root = assets_root(files[0], context.scene.strinova_char_dir, meshes)
             if root:
-                report = shading.shade_weapon(context, meshes, root, host)
+                report = shading.shade_weapon(context, meshes, root)
                 for k, v in report.items():
                     print(f"[Strinova] {k}: {v}")
                 done = sum(isinstance(v, dict) for v in report.values())
-                shaded = rpt_(", {}/{} materials").format(done, len(report)) + (rpt_(", lit by {}").format(host.name) if host else "")
+                shaded = rpt_(", {}/{} materials").format(done, len(report))
                 miss = shading.missing_textures(report)
                 if miss:
                     shaded += rpt_(" | {} materials without textures: not found in {}").format(len(miss), root)
