@@ -22,7 +22,7 @@ ES = {
     "Colours and intensities from the wheels next to the character":
         "Colores e intensidades de las ruedas junto al personaje",
     "Colours from this panel; the rig's wheels are hidden": "Colores de este panel; las ruedas del rig se ocultan",
-    "Custom Colors": "Colores propios",
+    "Custom Colors": "Colores personalizados",
     "Ambient": "Ambiente",
     "Sharp Lit": "Luz dura",
     "Soft Lit": "Luz suave",

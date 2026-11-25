@@ -8,10 +8,10 @@ Funciona con los dos formatos de modelo: **`.uemodel`** y **`.fbx`**, vengan de 
 
 ## Qué hace
 
-- **Importa** `.uemodel` y `.fbx`, o la carpeta entera de una skin: trae el modelo 3D y su versión de papel juntos.
+- **Importa** `.uemodel` y `.fbx`, o la carpeta entera de una skin: trae el modelo 3D y su versión de papel juntos. Encuentra solo las texturas que estén cerca del modelo.
 - **Toon shading** como en el juego: materiales reconstruidos desde las texturas, sombra de cara suave y contorno.
-- **Iluminación por personaje**: un sol que se mueve con un control y dos ruedas de color (luz y sombra) dentro del rig, todo animable.
-- **Rig completo** con [Gacha Setup](https://github.com/PaoloESAN/gacha-setup) y física de pelo, ropa y pecho que se activa con una casilla.
+- **Iluminación por personaje**: un sol que se mueve con un control, colores de luz y sombra duras y suaves, luz de borde (rim) y suavidad de la sombra. Los colores se eligen con ruedas en el rig o en el panel lateral, solo para el personaje seleccionado.
+- **Rig completo** con [Gacha Setup](https://github.com/PaoloESAN/gacha-setup) con codos y rodillas por rotación o por poles, y física de pelo, ropa y pecho que se activa con una casilla.
 - **Cara ordenada**: los controles de expresión agrupados en Ojos, Pupilas, Cejas, Boca, Labios y Cabeza, con colores, control de mirada y parpadeo.
 - **Versión de papel**: cambia entre el modelo 3D y el de papel en un fotograma, como en el juego.
 - **Accesorios**: máscaras y sombreros con su propio hueso y un interruptor para mostrarlos u ocultarlos.

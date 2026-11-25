@@ -9,7 +9,7 @@ shortcut: only Mask1.R is used (4-matcap atlas quarter); Mask2 and the other cha
 import bpy, os, re, json, contextlib, functools, mathutils
 from math import cos, sin, tau  # imported by name: math() below is a node helper
 from . import common, paper
-from .common import target_mesh, rpt_, tip_
+from .common import target_mesh, rpt_
 
 SHADOW_TINT = (0.80, 0.70, 0.82, 1.0)
 
@@ -593,12 +593,13 @@ def ui_name(color):
 
 
 def ensure_settings(mesh):
-    """The sidebar's lighting properties on a character mesh (kept if it already has them)."""
+    """The sidebar's lighting properties on a character mesh (kept if it already has them). Texts in
+    English: Blender translates them when it shows them, so they follow a change of language."""
     if LIGHTING_TYPE not in mesh:
         mesh[LIGHTING_TYPE] = 0
         mesh.id_properties_ui(LIGHTING_TYPE).update(min=0, max=1, items=[
-            ("RIG", "Rig Panel", tip_("Colours and intensities from the wheels next to the character"), 0, 0),
-            ("PARAMETERS", "Parameter Panel", tip_("Colours from this panel; the rig's wheels are hidden"), 0, 1)])
+            ("RIG", "Rig Panel", "Colours and intensities from the wheels next to the character", 0, 0),
+            ("PARAMETERS", "Parameter Panel", "Colours from this panel; the rig's wheels are hidden", 0, 1)])
     for c in COLORS:
         if f"st_{c}" not in mesh:
             mesh[f"st_{c}"] = (1.0, 1.0, 1.0)
@@ -606,7 +607,7 @@ def ensure_settings(mesh):
     for p, (default, lo, hi, text) in SCALARS.items():
         if p not in mesh:
             mesh[p] = default
-            mesh.id_properties_ui(p).update(min=lo, max=hi, default=default, description=tip_(text))
+            mesh.id_properties_ui(p).update(min=lo, max=hi, default=default, description=text)
 
 
 def _drive(owner, path, index, expr, variables):
