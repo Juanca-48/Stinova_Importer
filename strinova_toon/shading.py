@@ -477,16 +477,15 @@ RIM_SCALARS = {"Rim Intensity": "RimLightIntensity", "Rim Exponent": "RimFresnel
 
 
 def matcap_channel(nt, mc, mask, x, y):
-    """A single-channel matcap texture holds four grey matcaps, one per channel (R, G, B, A); Mask1's red
-    picks it in four steps, like the quarters of an atlas. Without a mask, the first."""
+    """A single-channel matcap texture holds four grey matcaps, one per channel (R, G, B, A), picked by Mask1's
+    alpha with the same steps as an atlas of four (its red is flat in nearly every mask). Without a mask, the first."""
     sep = node(nt, "ShaderNodeSeparateColor", x, y)
     nt.links.new(mc.outputs["Color"], sep.inputs[0])
     out = sep.outputs[0]
     if mask:
-        red = node(nt, "ShaderNodeSeparateColor", x, y - 200)
-        nt.links.new(mask.outputs["Color"], red.inputs[0])
-        for i, ch in enumerate((sep.outputs[1], sep.outputs[2], mc.outputs["Alpha"]), 1):
-            out = mix_rgb(nt, "MIX", math(nt, "GREATER_THAN", red.outputs[0], i / 4 - 0.001, x + 180 * i, y - 200), out, ch, x + 180 * i, y)
+        mc.image.alpha_mode = "CHANNEL_PACKED"  # the fourth matcap, not an opacity
+        for i, (t, ch) in enumerate(zip(QUADRANTS, (sep.outputs[1], sep.outputs[2], mc.outputs["Alpha"])), 1):
+            out = mix_rgb(nt, "MIX", math(nt, "GREATER_THAN", mask.outputs["Alpha"], t, x + 180 * i, y - 200), out, ch, x + 180 * i, y)
     return out
 
 
