@@ -121,8 +121,11 @@ También están en Object Properties > Custom Properties del rig.
   (incluidos en el add-on, o los .json de FModel si están): toon con luz
   del sol, cara con sombra suave (SDF), normal map y matcap. De los datos
   del juego:
-    * Color de la sombra: las 27 rampas del juego, una por material o por zona
-      (piel, pelo, tela...). Van en la imagen "ST Ramps", dentro del .blend.
+    * Color de la sombra: 27 rampas, una por material o por zona (piel, pelo,
+      tela...). El add-on trae las suyas, parecidas a las del juego. Para usar
+      las del juego exactas, en FModel guarda RampTexture2DArray como textura
+      (PaperMan\MaterialMaster\Character; 27 PNG) y vuelve a importar el
+      personaje. Van en la imagen "ST Ramps", dentro del .blend.
     * Matcap: solo donde marca la máscara del material, y con esa fuerza.
     * Emisión: solo las partes que marca la máscara (llamas, gemas...).
     * Brillo del pelo: los mechones pintados, donde miran a la cámara.
@@ -153,7 +156,7 @@ También están en Object Properties > Custom Properties del rig.
     * Borde extra: un borde para todos los materiales, que no viene del juego
       (0 = apagado; con 0.3-0.5 ya se nota).
     * Suavidad de la sombra: corte entre luz y sombra, de duro (0) a suave.
-      1 = la rampa del juego tal cual.
+      1 = la rampa tal cual.
     * Grosor contorno: grosor de la línea del contorno.
   En la escena las ruedas llevan el nombre en inglés: Ambient, Sharp Lit, Sharp
   Shadow, Soft Lit, Soft Shadow, Rim Lit y Rim Shadow.
@@ -347,8 +350,8 @@ Las armas se importan aparte, con el botón "Importar arma" de la sección
 11. LIMITACIONES CONOCIDAS
 --------------------------
 
-- Los personajes usan las rampas de color de sombra del juego; las armas
-  conservan un tinte fijo.
+- Sin las rampas del juego (sección 5) los colores de sombra son parecidos, no
+  exactos. Las armas conservan un tinte fijo.
 - La fórmula de la luz de borde del juego no está en sus datos: se deduce de
   los nombres de los parámetros y puede no coincidir en todas las skins.
 - Beta: la fórmula del especular del juego no está en sus datos, así que el
@@ -386,5 +389,4 @@ Módulos (carpeta strinova_toon):
   migrate.py    Renombra lo que crearon versiones anteriores con nombres en
                 español.
   materials.json  Datos de todos los materiales de personajes y armas.
-  ramps.json    Las rampas de sombra del juego, como puntos de color.
   __init__.py   Panel y registro.

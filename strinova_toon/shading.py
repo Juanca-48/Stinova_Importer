@@ -259,25 +259,59 @@ def scaled_softness(nt, softness, x, y):
 
 
 RAMPS, RAMP_W, RAMP_EDGE = "ST Ramps", 512, 0.53  # RAMP_EDGE: where most ramps turn from shadow to light
+RAMP_FILE = "RampTexture2DArray_LAYER{}.png"  # FModel's "Save Texture" of the game's ramps
+# the add-on's own shadow colours (sRGB), used without that export: one flat, rounded colour per RampID,
+# picked by eye to resemble the game's, with a generic edge
+NEUTRAL, LILAC, SKIN, DARK, WARM = (0.85, 0.85, 0.85), (0.82, 0.80, 0.90), (0.96, 0.83, 0.78), (0.50, 0.48, 0.58), (0.88, 0.80, 0.72)
+OWN_RAMPS = [
+    (1.0, 1.0, 1.0), NEUTRAL, LILAC, NEUTRAL, SKIN, SKIN, LILAC, (1.0, 0.84, 0.85), DARK, WARM, LILAC, (0.55, 0.65, 0.80),
+    LILAC, WARM, DARK, WARM, (0.94, 0.89, 0.91), (0.80, 0.65, 0.80), (0.65, 0.45, 0.38), (0.75, 0.68, 0.95),
+    (0.78, 0.72, 0.45), (0.88, 0.68, 0.58), SKIN, (0.68, 0.76, 0.95), (0.76, 0.84, 0.94), (0.76, 0.80, 0.95), (0.75, 0.77, 0.80)]
 
 
-def ramp_image():
-    """The game's 27 shadow ramps (ramps.json, colour stops), one per row: row 0 at the bottom."""
-    img = bpy.data.images.get(RAMPS)
-    if img:
-        return img
-    with open(os.path.join(os.path.dirname(__file__), "ramps.json"), encoding="utf-8") as fh:
-        ramps = json.load(fh)
+def own_ramps():
+    """Pixels of OWN_RAMPS: flat shadow up to the middle, then a short smooth edge to white."""
     pixels = []
-    for stops in ramps:
-        for a, b in zip(stops, stops[1:]):
-            for i in range(a[0], b[0]):
-                t = (i - a[0]) / (b[0] - a[0])
-                pixels += [(u + (v - u) * t) / 255 for u, v in zip(a[1:], b[1:])] + [1.0]
-        pixels += [c / 255 for c in stops[-1][1:]] + [1.0]
-    img = bpy.data.images.new(RAMPS, RAMP_W, len(ramps))
-    img.pixels.foreach_set(pixels)
+    for shadow in OWN_RAMPS:
+        for i in range(RAMP_W):
+            t = min(max((i / (RAMP_W - 1) - 0.5) / 0.07, 0.0), 1.0)
+            t = t * t * (3 - 2 * t)
+            pixels += [c + (1 - c) * t for c in shadow] + [1.0]
+    return pixels
+
+
+def game_ramps(char_dir):
+    """Pixels of the game's ramps from the user's own FModel export (MaterialMaster\\Character, around the
+    character's folder or the one in the preferences), or None if they aren't all there."""
+    for root in (common.skin_assets(char_dir) if char_dir and "SkinAssets" in char_dir else None, common.fmodel_root()):
+        folder = root and os.path.join(os.path.dirname(root), "MaterialMaster", "Character")
+        if not folder or not all(os.path.isfile(os.path.join(folder, RAMP_FILE.format(i))) for i in range(len(OWN_RAMPS))):
+            continue
+        pixels = []
+        for i in range(len(OWN_RAMPS)):
+            img = bpy.data.images.load(os.path.join(folder, RAMP_FILE.format(i)), check_existing=False)
+            row = list(img.pixels) if img.size[0] == RAMP_W and img.size[1] >= 1 else []
+            bpy.data.images.remove(img)
+            pixels += row[:RAMP_W * 4]
+        if len(pixels) == len(OWN_RAMPS) * RAMP_W * 4:
+            return pixels
+    return None
+
+
+def ramp_image(char_dir=None):
+    """The shadow ramps, one per row (row 0 at the bottom), shared by every character: the game's once
+    found, the add-on's own until then."""
+    img = bpy.data.images.get(RAMPS)
+    if img and img.get("st_game"):
+        return img
+    game = game_ramps(char_dir)
+    if img and "st_game" in img and not game:
+        return img
+    img = img or bpy.data.images.new(RAMPS, RAMP_W, len(OWN_RAMPS))
+    img.pixels.foreach_set(game or own_ramps())
+    img.update()
     img.pack()  # saved in the .blend: it has no file
+    img["st_game"] = bool(game)
     return img
 
 
@@ -358,7 +392,7 @@ def shader_out(nt, color, alpha, out_node, x, y):
 GROUP_VERSION = 10  # bump when a group changes; 2 = colours and light objects per character (and the outline
 #   group's first version mark: older unmarked ST Outline groups, without the no-COL0 fallback, get rebuilt);
 #   3 = matcap UV without Vector Transform (broken in Blender 5.3); 6 = panel colours, shadow softness, rim;
-#   10 = the game's shadow ramps, specular, hair highlight
+#   10 = shadow ramps, specular, hair highlight
 
 
 def shared_group(name, typ, version=None):
@@ -1350,6 +1384,19 @@ def bundled_material(name, skin, char_dir):
             or next((v for k, v in entries.items() if k.endswith(f"/{skin}")), None) or next(iter(entries.values())))
 
 
+def read_material(path):
+    """Material data of a JSON exported with FModel, or None if it is something else: "Save Properties"
+    writes another format under the same name, over the material's export."""
+    if not path:
+        return None
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except ValueError:  # truncated or not JSON
+        return None
+    return data if isinstance(data, dict) and "Textures" in data else None
+
+
 def run(obj, char_dir):
     arm = obj.find_armature()
     mesh_skin = skin_of(obj.name, "")
@@ -1361,6 +1408,7 @@ def run(obj, char_dir):
         follow_settings(obj, host)
     else:
         ensure_lighting_panel(bpy.context, obj)  # after ensure_rig: it aims the sun with the sun handle
+    ramp_image(char_dir)  # before the groups, which are reused once built
     toon_g, face_g = build_toon_group(), build_face_group()
     mod = obj.modifiers.get("ST Light Vectors") or obj.modifiers.new("ST Light Vectors", "NODES")
     mod.node_group = build_vectors_gn()
@@ -1374,11 +1422,7 @@ def run(obj, char_dir):
         base_name = re.sub(r"\.\d{3}$", "", mat.name)  # Blender adds .001 on name clashes (re-imports, FBX)
         skin = skin_of(base_name, mesh_skin)
         jp = pick(json_idx, base_name, skin)  # a JSON next to the textures wins (newer or edited export)
-        if jp:
-            with open(jp, encoding="utf-8") as fh:
-                data = json.load(fh)
-        else:
-            data = bundled_material(base_name, skin, char_dir)
+        data = read_material(jp) or bundled_material(base_name, skin, char_dir)
         if not data:
             report[mat.name] = NO_DATA
             continue
@@ -1538,11 +1582,7 @@ def shade_weapon(context, meshes, assets_root):
                     continue
                 base = re.sub(r"\.\d{3}$", "", mat.name)
                 jp = pick(json_idx, base, "")  # a JSON next to the textures wins (newer or edited export)
-                if jp:
-                    with open(jp, encoding="utf-8") as fh:
-                        data = json.load(fh)
-                else:
-                    data = bundled_material(base, weapon_skin(base), "")
+                data = read_material(jp) or bundled_material(base, weapon_skin(base), "")
                 if not data:
                     report[mat.name] = NO_DATA
                     continue

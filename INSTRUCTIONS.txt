@@ -117,8 +117,11 @@ They are also in the rig's Object Properties > Custom Properties.
 - Materials are rebuilt from the textures and the material data (bundled
   with the add-on, or FModel's .json files if present): toon with sunlight,
   face with soft shadow (SDF), normal map and matcap. From the game's data:
-    * Shadow color: the game's 27 ramps, one per material or per area (skin,
-      hair, cloth...). They are kept in the "ST Ramps" image, inside the .blend.
+    * Shadow color: 27 ramps, one per material or per area (skin, hair,
+      cloth...). The add-on has its own, close to the game's. To use the game's
+      exactly, in FModel save RampTexture2DArray as a texture
+      (PaperMan\MaterialMaster\Character; 27 PNGs) and import the character
+      again. They are kept in the "ST Ramps" image, inside the .blend.
     * Matcap: only where the material's mask says, and as strong as it says.
     * Emission: only the parts the mask marks (flames, gems...).
     * Hair highlight: the painted strands, where they face the camera.
@@ -148,7 +151,7 @@ They are also in the rig's Object Properties > Custom Properties.
     * Extra Rim: a rim for every material, not from the game (0 = off; 0.3-0.5
       is already noticeable).
     * Shadow Softness: edge between light and shadow, from hard (0) to soft.
-      1 = the game's ramp as it is.
+      1 = the ramp as it is.
     * Outline width: thickness of the outline.
 - Characters imported with 1.2 or earlier keep their two wheels (Light and
   Ambient, now called Sharp Lit and Sharp Shadow) and their shading until they
@@ -335,7 +338,8 @@ panel's "Weapons" section. Importing a character never brings its weapon.
 11. KNOWN LIMITATIONS
 ---------------------
 
-- Characters use the game's shadow color ramps; weapons keep a fixed tint.
+- Without the game's ramps (section 5) shadow colors are close, not exact.
+  Weapons keep a fixed tint.
 - The game's rim light formula isn't in its data: it is read from the
   parameters' names and may not match every skin.
 - Beta: the game's specular formula isn't in its data, so metal and shiny
@@ -371,5 +375,4 @@ Modules (strinova_toon folder):
                 English; a new UI string needs its line here.
   migrate.py    Renames what older versions created with Spanish names.
   materials.json  Data for every character and weapon material.
-  ramps.json    The game's shadow ramps, as color stops.
   __init__.py   Panel and registration.
