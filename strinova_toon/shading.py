@@ -5,9 +5,10 @@ The shader reuses Gacha Setup's idea of light/head vectors stored as mesh attrib
 (lightDir, headForward, headUp).
 Textures (channels read off the data and the game's captures): Mask1 = R ramp / matcap index or, in the old
 materials, the hair highlight; G and A where and how much matcap; B emission. Mask2 (PBR) = R metal,
-G roughness, A specular strength. MixTex (old) = R roughness, G metal.
-shortcut: the game's specular formulas aren't in the export (Spec1 / Spec2, Mask2's B, the environment
-reflection): a plain GGX highlight stands in for them. Revisit with captures.
+G roughness, B specular, A how much environment is reflected; Mask2(0-1) is its fixed value without a texture.
+MixTex (old) = R roughness, G metal, B specular; none = the game's default (1, 0, 0): no highlight.
+shortcut: the game's specular formulas aren't in the export (Spec1 / Spec2, the environment
+reflection): a GGX highlight with Spec1's curve as its parameters suggest and a plain sky stand in for them. Revisit with captures.
 """
 import bpy, os, re, json, contextlib, functools, mathutils
 from math import cos, sin, tau  # imported by name: math() below is a node helper
@@ -389,10 +390,11 @@ def shader_out(nt, color, alpha, out_node, x, y):
 
 
 # ---------- node groups ----------
-GROUP_VERSION = 11  # bump when a group changes; 2 = colours and light objects per character (and the outline
+GROUP_VERSION = 13  # bump when a group changes; 2 = colours and light objects per character (and the outline
 #   group's first version mark: older unmarked ST Outline groups, without the no-COL0 fallback, get rebuilt);
 #   3 = matcap UV without Vector Transform (broken in Blender 5.3); 6 = panel colours, shadow softness, rim;
-#   10 = shadow ramps, specular, hair highlight; 11 = hair shadow on the face
+#   10 = shadow ramps, specular, hair highlight; 11 = hair shadow on the face;
+#   12 = environment reflection, specular from Mask2's B; 13 = Spec1 curve
 
 
 def shared_group(name, typ, version=None):
@@ -478,18 +480,60 @@ def matcap_channel(nt, mc, mask, x, y):
 
 
 def specular(nt, N, L, V, base, gi, lit, x, y):
-    """GGX highlight of the sun on the lit side: metal tints it with the base colour."""
+    """GGX highlight of the sun plus the environment's reflection: metal tints both with the base colour.
+    The highlight's curve (Spec1 of the old materials, read from its parameters' names and values): clipped
+    to Spec Range and normalized, from soft (Spec Sharpness 0) to a toon step at Spec Begin (1), times
+    Spec Intensity; in the shadow, times Spec Shadow. The defaults leave the plain GGX, up to 5."""
     H = vmath(nt, "NORMALIZE", vmath(nt, "ADD", L, V, x, y).outputs[0], None, x + 180, y).outputs[0]
     nh = math(nt, "MAXIMUM", vmath(nt, "DOT_PRODUCT", N, H, x + 360, y).outputs["Value"], 0.0, x + 540, y)
     a = math(nt, "MAXIMUM", math(nt, "POWER", gi.outputs["Roughness"], 2.0, x, y - 200), 0.04, x + 180, y - 200)
     a2 = math(nt, "MULTIPLY", a, a, x + 360, y - 200)
     d = math(nt, "MULTIPLY_ADD", math(nt, "MULTIPLY", nh, nh, x + 720, y), math(nt, "SUBTRACT", a2, 1.0, x + 540, y - 200), x + 900, y)
     nt.nodes[-1].inputs[2].default_value = 1.0
-    ggx = math(nt, "DIVIDE", a2, math(nt, "MULTIPLY", math(nt, "MULTIPLY", d, d, x + 1080, y), 4 * 3.14159, x + 1260, y), x + 1440, y)
-    amt = math(nt, "MULTIPLY", math(nt, "MULTIPLY", math(nt, "MINIMUM", ggx, 5.0, x + 1620, y), lit, x + 1800, y),
-               gi.outputs["Specular"], x + 1980, y)
-    f0 = mix_rgb(nt, "MIX", gi.outputs["Metallic"], (0.08, 0.08, 0.08, 1.0), base, x + 1620, y - 250)
-    return mix_rgb(nt, "MULTIPLY", 1.0, f0, amt, x + 2160, y - 100, clamp=False)
+    # no pi: a lit surface here emits its base colour (a light of intensity pi)
+    ggx = math(nt, "DIVIDE", a2, math(nt, "MULTIPLY", math(nt, "MULTIPLY", d, d, x + 1080, y), 4.0, x + 1260, y), x + 1440, y)
+    rng = math(nt, "MAXIMUM", gi.outputs["Spec Range"], 0.01, x + 1440, y + 200)
+    t = math(nt, "DIVIDE", math(nt, "MINIMUM", ggx, rng, x + 1620, y), rng, x + 1800, y)
+    lo = math(nt, "MULTIPLY", gi.outputs["Spec Begin"], gi.outputs["Spec Sharpness"], x + 1440, y + 400)
+    hi = math(nt, "SUBTRACT", 1.0, math(nt, "MULTIPLY", math(nt, "SUBTRACT", 1.0, gi.outputs["Spec Begin"], x + 1440, y + 600),
+                                        gi.outputs["Spec Sharpness"], x + 1620, y + 600), x + 1800, y + 600)
+    width = math(nt, "MAXIMUM", math(nt, "SUBTRACT", hi, lo, x + 1980, y + 500), 0.02, x + 2160, y + 500)
+    step = math(nt, "MAXIMUM", math(nt, "DIVIDE", math(nt, "SUBTRACT", t, lo, x + 1980, y + 200), width, x + 2160, y + 200), 0.0, x + 2340, y + 200)
+    amt = math(nt, "MULTIPLY", math(nt, "MINIMUM", step, 1.0, x + 2520, y + 200), gi.outputs["Spec Intensity"], x + 2700, y + 200)
+    shade = mix_rgb(nt, "MIX", lit, gi.outputs["Spec Shadow"], (1.0, 1.0, 1.0, 1.0), x + 2520, y)
+    amt = mix_rgb(nt, "MULTIPLY", 1.0, shade, amt, x + 2880, y + 100, clamp=False)
+    f0 = mix_rgb(nt, "MIX", gi.outputs["Metallic"], mix_rgb(nt, "MULTIPLY", 1.0, gi.outputs["Specular"], (0.08, 0.08, 0.08, 1.0), x + 1440, y - 250), base, x + 1620, y - 250)
+    direct = mix_rgb(nt, "MULTIPLY", 1.0, f0, amt, x + 2160, y - 100, clamp=False)
+    # the environment: a sky / horizon / ground gradient in place of the game's panorama, flatter when rough
+    nv = vmath(nt, "DOT_PRODUCT", N, V, x, y - 500).outputs["Value"]
+    fres = math(nt, "MULTIPLY", math(nt, "POWER", math(nt, "SUBTRACT", 1.0, math(nt, "ABSOLUTE", nv, None, x + 180, y - 500), x + 360, y - 500), 5.0, x + 540, y - 500),
+                gi.outputs["Specular"], x + 720, y - 500)
+    inv = node(nt, "ShaderNodeVectorMath", x, y - 700, operation="SCALE")
+    nt.links.new(V, inv.inputs[0])
+    inv.inputs["Scale"].default_value = -1.0
+    refl = node(nt, "ShaderNodeSeparateXYZ", x + 360, y - 700)
+    nt.links.new(vmath(nt, "REFLECT", inv.outputs[0], N, x + 180, y - 700).outputs[0], refl.inputs[0])
+    sharp = math(nt, "SUBTRACT", 1.0, gi.outputs["Roughness"], x + 360, y - 850)
+    up = math(nt, "MULTIPLY_ADD", math(nt, "MULTIPLY", refl.outputs["Z"], sharp, x + 540, y - 700), 0.5, x + 720, y - 700)
+    nt.nodes[-1].inputs[2].default_value = 0.5
+    sky = node(nt, "ShaderNodeValToRGB", x + 900, y - 700)
+    nt.links.new(up, sky.inputs[0])
+    els = sky.color_ramp.elements
+    while len(els) < len(ENVIRONMENT):
+        els.new(1.0)
+    for e, (pos, c) in zip(els, ENVIRONMENT):
+        e.position, e.color = pos, (*c, 1.0)
+    env = mix_rgb(nt, "MULTIPLY", 1.0, sky.outputs[0], mix_rgb(nt, "ADD", 1.0, f0, fres, x + 1800, y - 500, clamp=False), x + 1980, y - 600, clamp=False)
+    env = mix_rgb(nt, "MULTIPLY", 1.0, env, gi.outputs["Environment"], x + 2160, y - 600, clamp=False)
+    return mix_rgb(nt, "ADD", 1.0, direct, env, x + 2340, y - 300, clamp=False)
+
+
+SPEC1 = {"Spec Intensity": 5.0, "Spec Range": 5.0, "Spec Begin": 0.0, "Spec Sharpness": 0.0}
+OLD_SPEC1 = {"Spec Intensity": ("Spec1_Intensity", 1.0), "Spec Range": ("Spec1_RangeMax", 10.0),  # mat_toon's defaults
+             "Spec Begin": ("Spec1_Begin", 0.5), "Spec Sharpness": ("Spec1_Sharpness", 0.0)}
+ENVIRONMENT = (  # height of the reflected direction (0 below, 1 above): linear colour
+    (0.0, (0.03, 0.02, 0.015)), (0.42, (0.22, 0.17, 0.1)), (0.49, (0.3, 0.26, 0.18)), (0.53, (1.0, 1.0, 1.0)),
+    (0.65, (0.35, 0.5, 0.8)), (1.0, (0.12, 0.2, 0.38)))
 
 
 def build_toon_group():
@@ -510,6 +554,10 @@ def build_toon_group():
     sock(ng, "Metallic", "INPUT", "NodeSocketFloat", 0.0)
     sock(ng, "Roughness", "INPUT", "NodeSocketFloat", 1.0)
     sock(ng, "Specular", "INPUT", "NodeSocketFloat", 0.0)
+    sock(ng, "Environment", "INPUT", "NodeSocketFloat", 0.0)
+    for name, default in SPEC1.items():
+        sock(ng, name, "INPUT", "NodeSocketFloat", default)
+    sock(ng, "Spec Shadow", "INPUT", "NodeSocketColor", (0, 0, 0, 1))
     sock(ng, "Highlight", "INPUT", "NodeSocketFloat", 0.0)
     sock(ng, "View Limit", "INPUT", "NodeSocketFloat", 1.0)
     sock(ng, "View Limit Blur", "INPUT", "NodeSocketFloat", 0.1)
@@ -989,18 +1037,33 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
         # metal / roughness / strength
         mix_p = pick(tex_idx, t.get("MixTex", ""), skin) if sw.get("UseMetallicTex") or sw.get("UseRoughnessTex") else None
         m2_p = pick(tex_idx, t.get("Mask2", ""), skin) if sw.get("PBR") and sw.get("NeedMask2") else None
-        if m2_p or mix_p:
+        env = sca.get("IBLBrightness", 0.2)
+        fixed = cols.get("Mask2(0-1)") if sw.get("PBR") and not m2_p else None
+        if fixed:
+            for name, ch in (("Metallic", "R"), ("Roughness", "G"), ("Specular", "B")):
+                g.inputs[name].default_value = max(0.0, min(1.0, fixed[ch]))
+            g.inputs["Environment"].default_value = max(0.0, fixed["A"]) * env
+        elif m2_p or mix_p:
             pbr = tex(nt, m2_p or mix_p, "Non-Color", -900, -1700)
             used.append(os.path.basename(m2_p or mix_p))
             sep = node(nt, "ShaderNodeSeparateColor", -600, -1700)
             nt.links.new(pbr.outputs["Color"], sep.inputs[0])
-            nt.links.new(sep.outputs[0 if m2_p else 1], g.inputs["Metallic"])
-            nt.links.new(sep.outputs[1 if m2_p else 0], g.inputs["Roughness"])
+            for name, ch, use in (("Metallic", 0 if m2_p else 1, "UseMetallicTex"), ("Roughness", 1 if m2_p else 0, "UseRoughnessTex")):
+                if m2_p or sw.get(use):
+                    nt.links.new(sep.outputs[ch], g.inputs[name])
+                else:
+                    g.inputs[name].default_value = max(0.0, min(1.0, sca.get(name, 0.5)))
             if m2_p:
                 pbr.image.alpha_mode = "CHANNEL_PACKED"
-                nt.links.new(pbr.outputs["Alpha"], g.inputs["Specular"])
+                nt.links.new(sep.outputs[2], g.inputs["Specular"])
+                nt.links.new(math(nt, "MULTIPLY", pbr.outputs["Alpha"], env, -400, -1800), g.inputs["Environment"])
             else:
-                g.inputs["Specular"].default_value = max(0.0, min(1.0, sca.get("Spec1_Intensity", 1.0)))
+                nt.links.new(math(nt, "MULTIPLY", sep.outputs[2], 0.5, -400, -1800), g.inputs["Specular"])  # white = 4%, any non-metal's
+                for name, (key, default) in OLD_SPEC1.items():
+                    g.inputs[name].default_value = max(0.0, sca.get(key, default))
+                c = cols.get("Spec1_ShadowColor") or {"R": 0.5, "G": 0.5, "B": 0.5}
+                g.inputs["Spec Shadow"].default_value = (c["R"], c["G"], c["B"], 1.0)
+                g.inputs["Environment"].default_value = max(0.0, sca.get("EnvScale", 0.1))
     # sections in data-flow order: textures -> computed UVs -> UV-driven textures -> shading -> output
     frame(nt, "Base texture (colour + alpha)", "tex", [base])
     frame(nt, normal_label, "tex", normal)

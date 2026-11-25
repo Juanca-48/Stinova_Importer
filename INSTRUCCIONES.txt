@@ -356,8 +356,8 @@ Las armas se importan aparte, con el botón "Importar arma" de la sección
 - La fórmula de la luz de borde del juego no está en sus datos: se deduce de
   los nombres de los parámetros y puede no coincidir en todas las skins.
 - Beta: la fórmula del especular del juego no está en sus datos, así que el
-  metal y los materiales brillantes usan un brillo genérico. Aún sin hacer: los
-  reflejos del entorno.
+  metal y los materiales brillantes usan un brillo genérico y reflejan un cielo
+  y un suelo genéricos.
 - Sombra del pelo en la cara: en EEVEE solo la hace el pelo que se ve en
   cámara, y su borde puede verse algo ruidoso con pocas muestras.
 - Los personajes que ya están en una escena conservan su shading hasta volver a

@@ -344,7 +344,7 @@ panel's "Weapons" section. Importing a character never brings its weapon.
 - The game's rim light formula isn't in its data: it is read from the
   parameters' names and may not match every skin.
 - Beta: the game's specular formula isn't in its data, so metal and shiny
-  materials use a generic highlight. Not done yet: environment reflections.
+  materials use a generic highlight, and reflect a generic sky and ground.
 - Hair shadow on the face: in EEVEE only hair that is in view casts it, and its
   edge can look a little noisy with few samples.
 - Characters already in a scene keep their shading until imported again.
