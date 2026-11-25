@@ -123,21 +123,35 @@ También están en Object Properties > Custom Properties del rig.
 - Contorno: casco invertido (modificador "ST Outline"). Sin contorno en cara
   y ojos, como en el juego. Color: la textura base oscurecida.
 - Controles de iluminación (colección de huesos "Lighting" del rig):
-    * Una rueda por color (ver abajo): la posición del selector da el tono y
-      la saturación; la barra, la intensidad.
+    * Panel del rig: una rueda para cada uno de los siete colores de abajo. La
+      posición del selector da el tono y la saturación; la barra, la
+      intensidad (hasta 1.5).
     * "ST Sun" (sol): la luz llega desde este control hacia la cabeza y mueve las
       sombras del cuerpo y de la cara.
   Se animan en la misma acción que el personaje.
 - Sección "Iluminación" del panel: aparece con un personaje seleccionado y
-  solo cambia ese (animable; la versión de papel y el arma
-  conectada siguen al personaje):
-    * Tipo de iluminación: colores de las ruedas del rig (Panel del rig) o de
-      esta sección, ocultando las ruedas (Panel de parámetros): Ambiente, Luz / Sombra dura (el corte toon), Luz / Sombra
-      suave (un degradado ancho) y Borde iluminado / en sombra.
-    * Intensidad del borde: fuerza de la luz de borde (rim). El juego solo la
-      define en algunos materiales; Borde extra la añade a todos.
-    * Suavidad de la sombra: borde entre luz y sombra, duro (0) a suave.
-    * Grosor contorno.
+  solo cambia ese (el activo, si hay varios). Su versión de papel y su arma lo
+  siguen:
+    * Tipo de iluminación: de dónde salen los colores. Panel del rig: las
+      ruedas del rig. Panel de parámetros: esta sección, y las ruedas se
+      ocultan. Cada uno guarda sus propios colores.
+    * Ambiente: tiñe el personaje entero.
+    * Luz dura / Sombra dura: cada lado del corte toon.
+    * Luz suave / Sombra suave: un degradado ancho de la luz a la sombra.
+    * Borde iluminado / Borde en sombra: la luz de borde (rim) en el lado
+      iluminado y en la sombra. Un color oscuro oscurece el borde.
+    * Intensidad del borde: fuerza de la luz de borde. Los datos del juego solo
+      la dan a algunos materiales, y suele ser sutil.
+    * Borde extra: un borde para todos los materiales, que no viene del juego
+      (0 = apagado; con 0.3-0.5 ya se nota).
+    * Suavidad de la sombra: corte entre luz y sombra, de duro (0) a suave
+      (1 = por defecto).
+    * Grosor contorno: grosor de la línea del contorno.
+  En la escena las ruedas llevan el nombre en inglés: Ambient, Sharp Lit, Sharp
+  Shadow, Soft Lit, Soft Shadow, Rim Lit y Rim Shadow.
+- Los personajes importados con la 1.2 o anterior conservan sus dos ruedas
+  (Light y Ambient, ahora Sharp Lit y Sharp Shadow) y su shading hasta volver a
+  importarlos.
 - Cada personaje tiene su propio sol y sus controles: dos personajes pueden
   estar iluminados distinto (uno en interior y otro en exterior).
 - Los tres empties de la cabeza (ST_HeadOrigin / Forward / Up) dan la
@@ -281,6 +295,7 @@ Las armas se importan aparte, con el botón "Importar arma" de la sección
   puedes ponerla a mano. Si exportas con FModel texturas que faltaban con
   Blender abierto, al volver a importar el arma las encuentra (no hace falta
   reiniciar Blender).
+- Grosor contorno: en la sección Armas, con el arma seleccionada.
 - Controles del arma (colección de huesos "Weapon"):
     * Marco amarillo (Root): mueve y gira el arma entera.
     * Círculos celestes: las piezas que se mueven, como cargador
@@ -307,12 +322,12 @@ Las armas se importan aparte, con el botón "Importar arma" de la sección
   Para ajustar el agarre usa el control Root del arma (marco amarillo), no
   muevas el objeto del arma: mientras está conectada, mover el objeto se
   suma al agarre y la saca de la mano.
-- Mano izquierda: cada arma trae el control verde "ST Grip" (agarre), un anillo bajo
-  el cañón que se desliza a lo largo del arma (solo en esa dirección, por la
-  guía verde que marca su recorrido) y se pega a la parte de abajo del arma.
-  Con el arma ya conectada y seleccionada, "Conectar mano izquierda" pasa el brazo
-  izquierdo a IK, pone la mano en el agarre (palma en él, dedos a lo largo
-  del cañón, pulgar arriba) y la engancha:
+- Mano izquierda: cada arma trae el control verde "ST Grip" (agarre), un
+  anillo bajo el cañón que se desliza a lo largo del arma (solo en esa
+  dirección, por la guía verde que marca su recorrido) y se pega a la parte
+  de abajo del arma. Con el arma ya conectada y seleccionada, "Conectar mano
+  izquierda" pasa el brazo izquierdo a IK, pone la mano en el agarre (palma
+  en él, dedos a lo largo del cañón, pulgar arriba) y la engancha:
     * Deslizar el agarre (G) lleva la mano a lo largo del arma.
     * El control de la mano izquierda sigue sirviendo para ajustar cómo la
       apoya (moverla o girarla un poco), sin soltarla del arma.
@@ -326,6 +341,10 @@ Las armas se importan aparte, con el botón "Importar arma" de la sección
 --------------------------
 
 - La sombra es un tinte fijo, no las rampas de color del juego.
+- La fórmula de la luz de borde del juego no está en sus datos: se deduce de
+  los nombres de los parámetros y puede no coincidir en todas las skins.
+- Aún sin hacer: los brillos (especular) del juego, la sombra del pelo en la
+  cara y los materiales metálicos de los personajes.
 - Un .fbx exportado con herramientas distintas a Blender puede venir con otra
   escala o con los ejes de los huesos cambiados.
 - La física no reacciona al mover el hueso root ni al levantar las piernas.
@@ -337,8 +356,8 @@ Las armas se importan aparte, con el botón "Importar arma" de la sección
 Módulos (carpeta strinova_toon):
   importer.py   Importar .uemodel / .fbx / carpeta de skin y encontrar la
                 carpeta de texturas del personaje.
-  shading.py    Materiales toon, sol y empties de la cabeza, panel de
-                iluminación y contorno.
+  shading.py    Materiales toon, sol y empties de la cabeza, ajustes y ruedas
+                de iluminación, y contorno.
   rig.py        Rig con Gacha Setup, arreglos sobre él y física.
   face.py       Secciones de la cara, mirada, parpadeo y huesos faciales.
   paper.py      Versión de papel y el cambio 3D / papel.

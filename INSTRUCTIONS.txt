@@ -120,21 +120,32 @@ They are also in the rig's Object Properties > Custom Properties.
 - Outline: inverted hull ("ST Outline" modifier). No outline on the face and
   eyes, like in the game. Color: the base texture, darkened.
 - Lighting controls (rig bone collection "Lighting"):
-    * One wheel per color (see below): the picker's position sets hue and
-      saturation; the bar, intensity.
+    * Rig Panel: one wheel for each of the seven colors below. The picker's
+      position sets hue and saturation; the bar, intensity (up to 1.5).
     * "ST Sun": light comes from this control toward the head and moves
       the shadows of the body and the face.
   They animate in the same action as the character.
 - "Lighting" section of the panel: shown while a character is selected, and
-  changes only that one (animatable; the paper version and the
-  connected weapon follow the character):
-    * Lighting Type: colors from the rig's wheels (Rig Panel) or from this
-      section, hiding the wheels (Parameter Panel): Ambient, Sharp Lit / Shadow (the toon edge), Soft Lit /
-      Shadow (a wide gradient) and Rim Lit / Shadow.
-    * Rim Scale: strength of the rim light. The game's data sets it in some
-      materials only; Extra Rim adds one to all of them.
-    * Shadow Softness: hard (0) to soft edge between light and shadow.
-    * Outline width.
+  it changes only that one (the active one, if there are several). Its paper
+  version and its weapon follow it:
+    * Lighting Type: where the colors come from. Rig Panel: the wheels in the
+      rig. Parameter Panel: this section, and the wheels are hidden. Each one
+      keeps its own colors.
+    * Ambient: tints the whole character.
+    * Sharp Lit / Sharp Shadow: each side of the toon edge.
+    * Soft Lit / Soft Shadow: a wide gradient from light to shadow.
+    * Rim Lit / Rim Shadow: the rim light on the lit side and in the shadow. A
+      dark color darkens the rim instead.
+    * Rim Scale: strength of the rim light. The game's data gives a rim to
+      some materials only, usually a subtle one.
+    * Extra Rim: a rim for every material, not from the game (0 = off; 0.3-0.5
+      is already noticeable).
+    * Shadow Softness: edge between light and shadow, from hard (0) to soft
+      (1 = default).
+    * Outline width: thickness of the outline.
+- Characters imported with 1.2 or earlier keep their two wheels (Light and
+  Ambient, now called Sharp Lit and Sharp Shadow) and their shading until they
+  are imported again.
 - Each character has its own sun and controls: two characters can be lit
   differently (one indoors and one outdoors).
 - The three head empties (ST_HeadOrigin / Forward / Up) give the head's
@@ -265,14 +276,16 @@ panel's "Weapons" section. Importing a character never brings its weapon.
   using its light), the weapon uses that character's sun and panel colors,
   so it matches when you put it in their hand. Otherwise it creates its own
   sun.
-- Textures are looked up in FModel's SkinAssets folder: next to the model
-  if it comes from FModel. For a weapon kept elsewhere (an .fbx), like a
+- Textures are looked up in FModel's SkinAssets folder: next to the model if
+  it comes from FModel. For a weapon kept elsewhere (an .fbx), like a
   character: in its own folder and the folders above it (the nearest one
-  holding its textures); if they aren't there, in the
-  "FModel export folder" of the add-on's preferences (Edit > Preferences >
-  Add-ons > Strinova Toon Setup). It fills itself in the first time you
-  import anything from FModel's export; you can also set it by hand. If you export missing textures with FModel while Blender is open,
-  importing the weapon again finds them (no need to restart Blender).
+  holding its textures); if they aren't there, in the "FModel export folder"
+  of the add-on's preferences (Edit > Preferences > Add-ons > Strinova Toon
+  Setup). It fills itself in the first time you import anything from FModel's
+  export; you can also set it by hand. If you export missing textures with
+  FModel while Blender is open, importing the weapon again finds them (no
+  need to restart Blender).
+- Outline width: in the Weapons section, with the weapon selected.
 - Weapon controls ("Weapon" bone collection):
     * Yellow frame (Root): moves and rotates the whole weapon.
     * Light blue circles: the moving parts, like the magazine (Magazine),
@@ -317,6 +330,10 @@ panel's "Weapons" section. Importing a character never brings its weapon.
 ---------------------
 
 - The shadow is a fixed tint, not the game's color ramps.
+- The game's rim light formula isn't in its data: it is read from the
+  parameters' names and may not match every skin.
+- Not done yet: the game's highlights (specular), the hair's shadow on the
+  face and the characters' metal materials.
 - An .fbx exported with tools other than Blender may come with another
   scale or with the bone axes changed.
 - Physics doesn't react to moving the root bone or to lifting the legs.
@@ -328,8 +345,8 @@ panel's "Weapons" section. Importing a character never brings its weapon.
 Modules (strinova_toon folder):
   importer.py   Import .uemodel / .fbx / skin folder and find the
                 character's texture folder.
-  shading.py    Toon materials, sun and head empties, lighting panel and
-                outline.
+  shading.py    Toon materials, sun and head empties, lighting settings and
+                wheels, and outline.
   rig.py        Rig with Gacha Setup, fixes on top of it, and physics.
   face.py       Face sections, gaze, blink and face bones.
   paper.py      Paper version and the 3D / paper switch.
