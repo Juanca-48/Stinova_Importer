@@ -48,11 +48,13 @@ def seconds(nt, speed, x, y):
     return v.outputs[0]
 
 
-def panned(nt, tiling, u_speed, v_speed, x, y):
-    """UV times `tiling`, moving `u_speed`, `v_speed` per second."""
-    uv = node(nt, "ShaderNodeUVMap", x, y)
-    scaled = vmath(nt, "MULTIPLY", uv.outputs[0], None, x + 180, y)
+def panned(nt, tiling, u_speed, v_speed, x, y, offset=(0.0, 0.0)):
+    """UV times `tiling` plus `offset`, moving `u_speed`, `v_speed` per second."""
+    uv = node(nt, "ShaderNodeUVMap", x, y).outputs[0]
+    scaled = node(nt, "ShaderNodeVectorMath", x + 180, y, operation="MULTIPLY_ADD")
+    nt.links.new(uv, scaled.inputs[0])
     scaled.inputs[1].default_value = (*tiling, 1.0)
+    scaled.inputs[2].default_value = (offset[0], 1.0 - tiling[1] - offset[1], 0.0)  # the game's V starts at the top
     move = node(nt, "ShaderNodeCombineXYZ", x + 180, y - 200)
     for i, s in enumerate((u_speed, -v_speed)):  # V grows down in the game
         if s:
@@ -141,30 +143,40 @@ def layer(nt, files, sca, cols, sw):
     if r:  # mix of the texture and its power: contrast
         g = node(nt, "ShaderNodeGamma", -200, 400)
         nt.links.new(col, g.inputs[0])
-        g.inputs[1].default_value = r["G"]
-        col = mix_rgb(nt, "MIX", r["A"], col, g.outputs[0], 0, 400)
+        g.inputs[1].default_value = max(r["G"], r["R"])
+        col = mix_rgb(nt, "MIX", r["A"], col, g.outputs[0], 100, 400)
     if not sw.get("IF_NoColor") and "Color" in cols:
         col = mix_rgb(nt, "MULTIPLY", 1.0, col, tuple(cols["Color"][k] for k in "RGB") + (1.0,), 200, 400, clamp=False)
+    power = sca.get("AlphaPower", 1.0) if sw.get("IF_AlphaMultiply") else 1.0
     for m in ("A", "B"):
         if sw.get("IF_AlphaMask" if m == "A" else "IF_AlphaMaskB") and files.get(f"AlphaMask{m}_Tex"):
             y = -300 if m == "A" else -600
-            uv = panned(nt, pair(f"AlphaMask{m}_UVTiling"), *speed(f"AlphaMask{m}_UV"), -1200, y)
-            t = cols.get(f"AlphaMask{m}_UVTiling", {"B": 0.0, "A": 0.0})
-            if t["B"] or t["A"]:  # the tiling's other half is an offset
-                uv = vmath(nt, "ADD", uv, None, -700, y)
-                uv.inputs[1].default_value = (t["B"], t["A"], 0.0)
-                uv = uv.outputs[0]
+            t = cols.get(f"AlphaMask{m}_UVTiling", {"B": 0.0, "A": 0.0})  # its other half is an offset
+            uv = panned(nt, pair(f"AlphaMask{m}_UVTiling"), *speed(f"AlphaMask{m}_UV"), -1200, y, offset=(t["B"], t["A"]))
             mask = channel(nt, tex(nt, files[f"AlphaMask{m}_Tex"], "Non-Color", -500, y, uv), cols.get(f"AlphaMask{m}_AlphaChannel", one), -200, y)
-            strength = math(nt, "MULTIPLY", strength, math(nt, "MULTIPLY", mask, sca.get(f"Mask{m}_Intensity", 1.0), 0, y), 200, y)
+            # the power before the intensity: Kanami's veins only on the upper wing, as in the video
+            mask = math(nt, "MULTIPLY", math(nt, "POWER", mask, power, -50, y), sca.get(f"Mask{m}_Intensity", 1.0), 100, y)
+            strength = math(nt, "MINIMUM", math(nt, "MULTIPLY", strength, mask, 250, y), 1.0, 400, y)
     if sw.get("IF_Dissolve") and files.get("DissolveTex") and files.get("DissolveMask"):
-        n = red(nt, tex(nt, files["DissolveTex"], "Non-Color", -500, -900, panned(nt, pair("DissolveTexUV_Tiling"), *speed("DissolveTexUV"), -1200, -900)).outputs["Color"], -200, -900)
-        edge = math(nt, "ADD", red(nt, tex(nt, files["DissolveMask"], "Non-Color", -500, -1200).outputs["Color"], -200, -1200),
-                    math(nt, "MULTIPLY", n, sca.get("DissolveNoise_Intensity", 0.0), 0, -900), 200, -1000)
-        left = math(nt, "SUBTRACT", edge, sca.get("Dissolve(0-1)", 0.0), 400, -1000)
-        if sw.get("IF_DsvOutLine") and "Color" in cols:  # a rim of the colour along the burnt edge
-            core = math(nt, "MULTIPLY", math(nt, "SUBTRACT", left, sca.get("DsvOutline", 0.0) * 0.5, 600, -800), sca.get("DsvOutline_Contrast", 1.0), 800, -800)
+        # burnt to shreds: drifting noise (pushed by the mask's green), kept where the mask's red adds to it;
+        # ColorB along the burnt edge, Color inside. Fitted to Bai Mo's video
+        m = node(nt, "ShaderNodeSeparateColor", -900, -1200)
+        nt.links.new(tex(nt, files["DissolveMask"], "Non-Color", -1200, -1200).outputs["Color"], m.inputs[0])
+        push = node(nt, "ShaderNodeCombineXYZ", -600, -1100)
+        amount = math(nt, "MULTIPLY", m.outputs[1], sca.get("DissolveNoise_Intensity", 0.0), -750, -1100)
+        nt.links.new(amount, push.inputs[0])
+        nt.links.new(amount, push.inputs[1])
+        # the game's time reads a third of these speeds in the video
+        u, v = (k * 0.35 for k in speed("DissolveTexUV"))
+        uv = vmath(nt, "ADD", panned(nt, pair("DissolveTexUV_Tiling"), u, v, -1200, -900), push.outputs[0], -500, -900).outputs[0]
+        n = red(nt, tex(nt, files["DissolveTex"], "Non-Color", -300, -900, uv).outputs["Color"], 0, -900)
+        kept = math(nt, "ADD", n, math(nt, "MULTIPLY", m.outputs[0], sca.get("DsvMask_Intensity", 0.37) * 1.5, 0, -1200), 200, -1000)
+        left = math(nt, "SUBTRACT", kept, sca.get("Dissolve(0-1)", 0.0), 400, -1000)
+        if sw.get("IF_DsvOutLine") and "ColorB" in cols:
+            core = math(nt, "MULTIPLY", math(nt, "SUBTRACT", left, sca.get("DsvOutline", 0.0) * 0.5, 600, -800), sca.get("DsvOutline_Contrast", 1.0) * 3, 800, -800)
             core = math(nt, "MINIMUM", math(nt, "MAXIMUM", core, 0.0, 1000, -800), 1.0, 1100, -800)
-            col = mix_rgb(nt, "MIX", core, tuple(cols["Color"][k] for k in "RGB") + (1.0,), col, 1200, 300, clamp=False)
+            rgb = lambda k: tuple(min(cols[k][c], 1.5) for c in "RGB") + (1.0,)
+            col = mix_rgb(nt, "MIX", core, rgb("ColorB"), rgb("Color") if "Color" in cols else col, 1200, 300, clamp=False)
         edge = math(nt, "MULTIPLY", left, sca.get("Dissolve_Contrast", 1.0), 600, -1000)
         strength = math(nt, "MULTIPLY", strength, math(nt, "MINIMUM", math(nt, "MAXIMUM", edge, 0.0, 800, -1000), 1.0, 1000, -1000), 1100, -600)
     return col, math(nt, "MINIMUM", math(nt, "MAXIMUM", strength, 0.0, 1200, -300), 1.0, 1300, -300)

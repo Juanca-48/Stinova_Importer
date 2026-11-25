@@ -3,8 +3,8 @@ panel (HSV wheels + sun handle) and the inverted-hull outline.
 
 The shader reuses Gacha Setup's idea of light/head vectors stored as mesh attributes
 (lightDir, headForward, headUp).
-Textures (channels read off the data and the game's captures): Mask1 = R ramp / matcap index or, in the old
-materials, the hair highlight; G and A where and how much matcap; B emission. Mask2 (PBR) = R metal,
+Textures (channels read off the data and the game's captures): Mask1 = R ramp index or, in the old
+materials, the hair highlight; G where the matcap goes, A how much (and which, in an atlas of four); B emission. Mask2 (PBR) = R metal,
 G roughness, B specular, A how much environment is reflected; Mask2(0-1) is its fixed value without a texture.
 MixTex (old) = R roughness, G metal, B specular; none = the game's default (1, 0, 0): no highlight.
 shortcut: the game's specular formulas aren't in the export (Spec1 / Spec2, the environment
@@ -87,6 +87,9 @@ def texture_root(path, names, ext=".png"):
 
 MISSING = "falta textura: "
 NO_DATA = "sin datos de material, se deja igual"  # report entry of a material with no JSON nor bundled data  # report entry of a material whose texture file isn't in the folder
+
+
+EFFECTS_WARNING = " | {} animated effects invisible: set the FModel export folder in the add-on's preferences and import again"
 
 
 def missing_textures(report):
@@ -445,18 +448,18 @@ def matcap_uv(nt, N, x, y):
     return ma.outputs[0]
 
 
+QUADRANTS = (0.31, 0.57, 0.78)  # Mask1 alpha: steps between the quarters of a 4-matcap atlas
+
+
 def matcap_quadrant(nt, uv, mask, x, y):
-    """MatCap UV into one quarter of a 4-matcap atlas (NeedMatCap4text): Mask1's red channel picks it,
-    in four steps (0-0.25 top left, then top right, bottom left, bottom right; Unreal reads textures
-    from the top). Checked against the game on Eika S211: cloth, skin and satin get their own matcap."""
-    sep = node(nt, "ShaderNodeSeparateColor", x, y)
-    nt.links.new(mask.outputs["Color"], sep.inputs[0])
-    idx = math(nt, "MINIMUM", math(nt, "FLOOR", math(nt, "MULTIPLY", sep.outputs[0], 4.0, x + 180, y), None, x + 360, y), 3.0, x + 540, y)
-    col = math(nt, "MODULO", idx, 2.0, x + 720, y)  # 0 left, 1 right
-    row = math(nt, "FLOOR", math(nt, "DIVIDE", idx, 2.0, x + 720, y - 150), None, x + 900, y - 150)  # 0 top, 1 bottom
+    """MatCap UV into one quarter of a 4-matcap atlas (NeedMatCap4text), picked by Mask1's alpha: top left,
+    bottom left, top right, bottom right (Unreal reads textures from the top). Read off 183 materials, whose
+    areas' colours match their quarter's; checked against the game on Kanami S212 and Eika S211."""
+    s1, s2, s3 = (math(nt, "GREATER_THAN", mask.outputs["Alpha"], t, x, y - 150 * i) for i, t in enumerate(QUADRANTS))
+    row = math(nt, "ADD", math(nt, "SUBTRACT", s1, s2, x + 360, y - 150), s3, x + 540, y - 150)  # 0 top, 1 bottom; s2: 1 right
     off = node(nt, "ShaderNodeCombineXYZ", x + 1080, y - 50)
-    nt.links.new(math(nt, "MULTIPLY", col, 0.5, x + 900, y), off.inputs[0])
-    nt.links.new(math(nt, "SUBTRACT", 0.5, math(nt, "MULTIPLY", row, 0.5, x + 1080, y - 150), x + 1260, y - 150), off.inputs[1])  # V grows up
+    nt.links.new(math(nt, "MULTIPLY", s2, 0.5, x + 720, y), off.inputs[0])
+    nt.links.new(math(nt, "SUBTRACT", 0.5, math(nt, "MULTIPLY", row, 0.5, x + 720, y - 150), x + 900, y - 150), off.inputs[1])  # V grows up
     half = node(nt, "ShaderNodeVectorMath", x + 1080, y + 150, operation="SCALE")
     nt.links.new(uv, half.inputs[0])
     half.inputs["Scale"].default_value = 0.5
@@ -1789,10 +1792,13 @@ class STRINOVA_OT_setup(bpy.types.Operator):
             print(f"[Strinova] {k}: {v}")
         done = sum(isinstance(v, dict) for v in report.values())
         miss = missing_textures(report)
+        obj["st_missing_effects"] = sum(1 for v in report.values() if isinstance(v, dict) and v.get("faltan"))
         obj["st_missing_textures"] = len(miss)  # the importer repeats the warning in its own message
         if miss:
             self.report({"WARNING"}, rpt_("{} of {} materials without textures (e.g. {}): not found in {}. "
                                           "Check the Root folder").format(len(miss), len(report), miss[0], char_dir))
+        elif obj["st_missing_effects"]:
+            self.report({"WARNING"}, rpt_(EFFECTS_WARNING).format(obj["st_missing_effects"]))
         else:
             self.report({"INFO"}, rpt_("{}/{} materials set up (details in the console)").format(done, len(report)))
         return {"FINISHED"}
