@@ -274,23 +274,32 @@ def toon_mix(nt, lit, soft, ndl, normal, base, tint, rim, x, y):
         geo = node(nt, "ShaderNodeNewGeometry", x, y - 300)
         nv = math(nt, "ABSOLUTE", vmath(nt, "DOT_PRODUCT", normal, geo.outputs["Incoming"], x + 180, y - 300).outputs["Value"], None, x + 360, y - 300)
         edge = math(nt, "MAXIMUM", math(nt, "SUBTRACT", 1.0, nv, x + 540, y - 300), 0.0, x + 720, y - 300)
-        # "Extra Rim": a plain rim of the base colour for the many materials whose JSON has none
-        rim_col = mix_rgb(nt, "MIX", math(nt, "MULTIPLY", soft_step(nt, edge, 0.6, 0.1, x + 900, y - 450), extra, x + 1260, y - 450),
-                          (0.0, 0.0, 0.0, 1.0), base, x + 1440, y - 450)
+        tint = mix_rgb(nt, "MIX", lit, rim_shadow, rim_lit, x + 540, y - 800, clamp=False)
+        tint = mix_rgb(nt, "MULTIPLY", 1.0, tint, scale, x + 720, y - 800, clamp=False)
+        # "Extra Rim", for the many materials whose JSON has none: mixed in, not added, so it also shows on
+        # black cloth and on skin that is already near white
+        bright = mix_rgb(nt, "MULTIPLY", 1.0, mix_rgb(nt, "MIX", 0.5, base, (1.0, 1.0, 1.0, 1.0), x + 720, y - 450), tint, x + 900, y - 600, clamp=False)
+        col = mix_rgb(nt, "MIX", math(nt, "MULTIPLY", soft_step(nt, edge, 0.55, 0.08, x + 900, y - 450), extra, x + 1260, y - 450), col, bright, x + 1440, y - 450)
         if rim:
-            # shortcut: the game's formula isn't in the export; read from the parameter names (fresnel ^
-            # exponent * scale, limited to the light's side by dot * scale + range). Revisit with captures.
-            side = math(nt, "ADD", math(nt, "MULTIPLY", ndl, rim["Rim Dot Scale"], x + 720, y - 600), rim["Rim Range"], x + 900, y - 600)
-            side = math(nt, "MINIMUM", math(nt, "MAXIMUM", side, 0.0, x + 1080, y - 600), 1.0, x + 1260, y - 600)
-            amt = math(nt, "MULTIPLY", math(nt, "POWER", edge, rim["Rim Exponent"], x + 900, y - 750), rim["Rim Scale"], x + 1080, y - 750)
-            amt = math(nt, "MULTIPLY", math(nt, "MULTIPLY", amt, rim["Rim Intensity"], x + 1260, y - 750), side, x + 1440, y - 750)
-            amt = math(nt, "MINIMUM", math(nt, "MAXIMUM", amt, 0.0, x + 1620, y - 750), 1.0, x + 1800, y - 750)
-            own_col = mix_rgb(nt, "MULTIPLY", rim["Rim Use Base"], rim["Rim Color"], base, x + 1440, y - 900)
-            rim_col = mix_rgb(nt, "ADD", amt, rim_col, own_col, x + 1980, y - 600)
-        rim_col = mix_rgb(nt, "MULTIPLY", 1.0, rim_col, mix_rgb(nt, "MIX", lit, rim_shadow, rim_lit, x + 1980, y - 800, clamp=False),
-                          x + 2160, y - 600, clamp=False)
-        rim_col = mix_rgb(nt, "MULTIPLY", 1.0, rim_col, scale, x + 2250, y - 600, clamp=False)
-        return mix_rgb(nt, "ADD", 1.0, col, rim_col, x + 2340, y)
+            # shortcut: the game's formula isn't in the export; read from the parameters. A third of the
+            # rims have scale 0 with intensities up to 8, so the scale can't multiply: it is how much the
+            # fresnel (edge ^ exponent) softens an edge band `range` wide. Revisit with captures.
+            center = math(nt, "MAXIMUM", math(nt, "MULTIPLY_ADD", rim["Rim Range"], -0.7, x + 720, y - 1050), 0.25, x + 900, y - 1050)
+            nt.nodes[-2].inputs[2].default_value = 1.0
+            amt = soft_step(nt, edge, center, 0.08, x + 1080, y - 1050)
+            fres = math(nt, "MULTIPLY", math(nt, "SUBTRACT", 1.0, math(nt, "POWER", edge, rim["Rim Exponent"], x + 900, y - 1250), x + 1080, y - 1250),
+                        rim["Rim Scale"], x + 1260, y - 1250)
+            amt = math(nt, "MULTIPLY", amt, math(nt, "SUBTRACT", 1.0, fres, x + 1440, y - 1250), x + 1620, y - 1050)
+            # dot scale: 0 = all around, 1 = fades out away from the light
+            away = math(nt, "MULTIPLY", math(nt, "MULTIPLY", math(nt, "SUBTRACT", 1.0, ndl, x + 900, y - 1450), 0.5, x + 1080, y - 1450),
+                        rim["Rim Dot Scale"], x + 1260, y - 1450)
+            away = math(nt, "MAXIMUM", math(nt, "SUBTRACT", 1.0, away, x + 1440, y - 1450), 0.0, x + 1620, y - 1450)
+            amt = math(nt, "MULTIPLY", math(nt, "MULTIPLY", amt, away, x + 1800, y - 1050), math(nt, "MAXIMUM", rim["Rim Intensity"], 0.0, x + 1620, y - 1600), x + 1980, y - 1050)
+            own_col = mix_rgb(nt, "MULTIPLY", rim["Rim Use Base"], rim["Rim Color"], base, x + 1440, y - 900, clamp=False)
+            own_col = mix_rgb(nt, "MULTIPLY", 1.0, own_col, tint, x + 1800, y - 900, clamp=False)
+            own_col = mix_rgb(nt, "MULTIPLY", 1.0, own_col, amt, x + 2160, y - 900, clamp=False)
+            col = mix_rgb(nt, "ADD", 1.0, col, own_col, x + 2340, y)
+        return col
 
 
 def shader_out(nt, color, alpha, out_node, x, y):
@@ -305,9 +314,9 @@ def shader_out(nt, color, alpha, out_node, x, y):
 
 
 # ---------- node groups ----------
-GROUP_VERSION = 5  # bump when a group changes; 2 = colours and light objects per character (and the outline
+GROUP_VERSION = 6  # bump when a group changes; 2 = colours and light objects per character (and the outline
 #   group's first version mark: older unmarked ST Outline groups, without the no-COL0 fallback, get rebuilt);
-#   3 = matcap UV without Vector Transform (broken in Blender 5.3); 5 = panel colours, shadow softness, rim
+#   3 = matcap UV without Vector Transform (broken in Blender 5.3); 6 = panel colours, shadow softness, rim
 
 
 def shared_group(name, typ, version=None):
@@ -1238,7 +1247,7 @@ def run(obj, char_dir):
 # blackened those skins. Here they get the characters' toon (same sun, same panel colours) so a weapon
 # matches the hand that holds it, plus a matcap shine where RMO marks polished metal.
 WEAPON_CLIP = 0.3333  # OpacityMaskClipValue of the weapon materials
-WEAPON_VERSION = 6  # its own version: 3 = RMO read as emissive / roughness / metal; 4 = matcap UV without Vector Transform; 6 = panel colours, extra rim
+WEAPON_VERSION = 7  # its own version: 3 = RMO read as emissive / roughness / metal; 4 = matcap UV without Vector Transform; 7 = panel colours, extra rim
 
 
 def build_weapon_group():
