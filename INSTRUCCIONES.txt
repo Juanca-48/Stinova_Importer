@@ -379,6 +379,8 @@ Las armas se importan aparte, con el botón "Importar arma" de la sección
   usa las suyas, menos parecidas.
 - Los personajes que ya están en una escena conservan su shading hasta volver a
   importarlos.
+- El contorno es una instancia: al convertir la malla (Convert to Mesh) o
+  exportarla, no se incluye.
 - Un arma importada con la 1.3 o anterior conserva la luz que tenía. Al
   conectarla y desconectarla, o al volver a importarla, tiene la suya propia.
 - El sol de un arma empieza en el origen de la escena: solo cuenta su rotación.

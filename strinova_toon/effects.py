@@ -6,10 +6,9 @@ scene's frame. The shared textures the user doesn't have are replaced by the add
 shortcut: the ribbon's waving (WP_*, moved in the vertex shader) and the sparkles' dissolve are left out.
 """
 import os
-import bpy
 from math import tau
 from . import common, own_textures
-from .shading import frame, math, mix_rgb, node, pick, shader_out, soft_step, vmath
+from .shading import frame, load_img, math, mix_rgb, node, pick, shader_out, soft_step, vmath
 
 KINDS = {"ribbon": ("T_rgb", "AlphaMaskB_Tex", "AlphaMaskB_Tex03", "Color_T3", "MainTexture"),
          "sparkle": ("MainTexture", "Noise"), "breath": ("MainTex",), "layer": ("MainTexture",)}
@@ -39,17 +38,8 @@ def find(entry, tex_idx, skin):
 
 
 def image(source, colorspace):
-    """The image of a file, or of a texture of our own ("own:<name>"). One datablock per colour space: effects
-    share textures and some read them as colour, others as data."""
-    if source.startswith("own:"):
-        return own_textures.make(source[4:], colorspace)
-    full = os.path.normcase(os.path.normpath(source))
-    for img in bpy.data.images:
-        if img.filepath and img.colorspace_settings.name == colorspace and os.path.normcase(os.path.normpath(bpy.path.abspath(img.filepath))) == full:
-            return img
-    img = bpy.data.images.load(source, check_existing=False)
-    img.colorspace_settings.name = colorspace
-    return img
+    """The image of a file, or of a texture of our own ("own:<name>")."""
+    return own_textures.make(source[4:], colorspace) if source.startswith("own:") else load_img(source, colorspace)
 
 
 def tex(nt, source, colorspace, x, y, vector=None):

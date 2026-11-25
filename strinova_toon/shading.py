@@ -117,7 +117,7 @@ def pick(idx, name, skin):
 
 def locate(idx, entry, skin, characters, beside=None):
     """The file of a texture of a material's data. By its path in the game (ObjectPath), as different textures share a
-    name: in the folder indexed, then in the game's Characters folders known (shared matcaps are in Characters\PBR).
+    name: in the folder indexed, then in the game's Characters folders known (shared matcaps are in Characters/PBR).
     By name alone if it isn't there; a shared one only from the folder of `beside` (the material's colour texture):
     other skins have matcaps of their own with the same names."""
     name = entry["ObjectName"].split("'")[1]
@@ -921,7 +921,13 @@ def lighting_source(mesh):
 
 # ---------- materials ----------
 def load_img(path, colorspace):
-    img = bpy.data.images.load(path, check_existing=True)
+    """The image of a file, one per colour space: the same texture can be colour in a material and data in
+    another, and setting it on a shared image would change it for both."""
+    full = os.path.normcase(os.path.normpath(path))
+    for img in bpy.data.images:
+        if img.filepath and img.colorspace_settings.name == colorspace and os.path.normcase(os.path.normpath(bpy.path.abspath(img.filepath))) == full:
+            return img
+    img = bpy.data.images.load(path, check_existing=False)
     img.colorspace_settings.name = colorspace
     return img
 
@@ -1117,9 +1123,9 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
             nt.links.new(mix_rgb(nt, "MULTIPLY", 1.0, e, blue.outputs[2], -400, -1300, clamp=False), g.inputs["Emission"])
         elif e and sw.get("EnableEmissive"):
             g.inputs["Emission"].default_value = e
-        # the old materials paint the hair highlight in Mask1's red (elsewhere an index)
+        # the old materials paint the hair highlight in Mask1's red (with RampIDFromTex, the ramp's index)
         power = sca.get("HightLightPow", 0.0)
-        if power > 0 and mask_p and not (sw.get("RampIDFromTex") or atlas or sw.get("UseMatCapSingleChanel")):
+        if power > 0 and mask_p and not sw.get("RampIDFromTex"):
             red = node(nt, "ShaderNodeSeparateColor", -600, -1500)
             nt.links.new(mask1().outputs["Color"], red.inputs[0])
             # the painted highlights are white: a flat lower value (Kanami S113's 0.61) is a ramp index
