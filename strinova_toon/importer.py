@@ -261,9 +261,9 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
         miss = mesh.get("st_missing_textures", 0) if "shading" in done else 0
         if miss:  # the shading's own warning scrolls away behind this message
             msg += rpt_(" | {} materials without textures: check the Root folder ({})").format(miss, context.scene.strinova_char_dir)
-        fx = mesh.get("st_missing_effects", 0) if "shading" in done else 0
+        fx = mesh.get("st_own_effects", 0) if "shading" in done else 0
         if fx:
-            msg += rpt_(shading.EFFECTS_WARNING).format(fx)
+            msg += rpt_(shading.EFFECTS_NOTE).format(fx)
         # the match model (Mesh3D) usually has no facial expressions; the lobby one (Mesh3DLobby) has them
         no_face = not paper.is_paper_path(self.filepath) and not mesh.data.shape_keys
         if no_face:
@@ -271,7 +271,7 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
             lobby = lobby if lobby and re.search(r"(?i)mesh3d.*lo", lobby) and os.path.normcase(lobby) != os.path.normcase(self.filepath) else None
             msg += (rpt_(" | no facial expressions in this model: import the lobby one, {}").format(lobby) if lobby
                     else rpt_(" | no facial expressions in this model (the lobby model, Mesh3DLobby, usually has them)"))
-        self.report({"WARNING" if failed or miss or fx or no_face else "INFO"}, msg)
+        self.report({"WARNING" if failed or miss or no_face else "INFO"}, msg)
         return {"FINISHED"}
 
 

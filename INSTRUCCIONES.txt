@@ -363,8 +363,9 @@ Las armas se importan aparte, con el botón "Importar arma" de la sección
 - Sombra del pelo en la cara: en EEVEE solo la hace el pelo que se ve en
   cámara, y su borde puede verse algo ruidoso con pocas muestras.
 - Los efectos animados se parecen a los del juego, no son exactos, y la cinta no
-  ondea. Sus texturas están en la carpeta PaperMan\Effects de FModel: sin ellas
-  (o sin la carpeta de FModel en las preferencias) el efecto es transparente.
+  ondea. Las texturas del juego para ellos están en la carpeta PaperMan\Effects de
+  FModel; sin ellas (o sin la carpeta de FModel en las preferencias) el add-on
+  usa las suyas, menos parecidas.
 - Los personajes que ya están en una escena conservan su shading hasta volver a
   importarlos.
 - Un arma importada con la 1.3 o anterior conserva la luz que tenía. Al
@@ -387,6 +388,7 @@ Módulos (carpeta strinova_toon):
   shading.py    Materiales toon, sol y empties de la cabeza, ajustes y ruedas
                 de iluminación, y contorno.
   effects.py    Materiales de efecto animados (cintas, llamas, destellos).
+  own_textures.py  Las texturas propias del add-on para ellos.
   rig.py        Rig con Gacha Setup, arreglos sobre él y física.
   face.py       Secciones de la cara, mirada, parpadeo y huesos faciales.
   paper.py      Versión de papel y el cambio 3D / papel.

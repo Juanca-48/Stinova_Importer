@@ -91,8 +91,8 @@ ES = {
         "{} de {} materiales sin texturas (p. ej. {}): no están en {}. Revisa la Carpeta raíz",
     " | {} materials without textures: check the Root folder ({})":
         " | {} materiales sin texturas: revisa la Carpeta raíz ({})",
-    " | {} animated effects invisible: set the FModel export folder in the add-on's preferences and import again":
-        " | {} efectos animados invisibles: pon la carpeta de exportación de FModel en las preferencias del add-on y vuelve a importar",
+    " | {} animated effects with the add-on's own textures: for the game's, set the FModel export folder in the preferences":
+        " | {} efectos animados con texturas propias del add-on: para las del juego, pon la carpeta de exportación de FModel en las preferencias",
     " | {} materials without textures: not found in {}": " | {} materiales sin texturas: no están en {}",
     " | no facial expressions in this model: import the lobby one, {}":
         " | este modelo no trae expresiones faciales: importa el de lobby, {}",

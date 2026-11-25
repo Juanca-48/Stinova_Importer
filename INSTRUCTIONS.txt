@@ -350,8 +350,9 @@ panel's "Weapons" section. Importing a character never brings its weapon.
 - Hair shadow on the face: in EEVEE only hair that is in view casts it, and its
   edge can look a little noisy with few samples.
 - Animated effects resemble the game's, they aren't exact, and the ribbon doesn't
-  wave. Their textures are in FModel's PaperMan\Effects folder: without them (or
-  without the FModel folder in the preferences) the effect is transparent.
+  wave. The game's textures for them are in FModel's PaperMan\Effects folder;
+  without them (or without the FModel folder in the preferences) the add-on uses
+  its own, less alike.
 - Characters already in a scene keep their shading until imported again.
 - A weapon imported with 1.3 or earlier keeps the light it had. Connecting and
   disconnecting it, or importing it again, gives it its own.
@@ -373,6 +374,7 @@ Modules (strinova_toon folder):
   shading.py    Toon materials, sun and head empties, lighting settings and
                 wheels, and outline.
   effects.py    Animated effect materials (ribbons, flames, sparkles).
+  own_textures.py  The add-on's own textures for them.
   rig.py        Rig with Gacha Setup, fixes on top of it, and physics.
   face.py       Face sections, gaze, blink and face bones.
   paper.py      Paper version and the 3D / paper switch.

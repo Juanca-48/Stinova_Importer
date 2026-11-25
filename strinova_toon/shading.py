@@ -89,7 +89,7 @@ MISSING = "falta textura: "
 NO_DATA = "sin datos de material, se deja igual"  # report entry of a material with no JSON nor bundled data  # report entry of a material whose texture file isn't in the folder
 
 
-EFFECTS_WARNING = " | {} animated effects invisible: set the FModel export folder in the add-on's preferences and import again"
+EFFECTS_NOTE = " | {} animated effects with the add-on's own textures: for the game's, set the FModel export folder in the preferences"
 
 
 def missing_textures(report):
@@ -1792,13 +1792,11 @@ class STRINOVA_OT_setup(bpy.types.Operator):
             print(f"[Strinova] {k}: {v}")
         done = sum(isinstance(v, dict) for v in report.values())
         miss = missing_textures(report)
-        obj["st_missing_effects"] = sum(1 for v in report.values() if isinstance(v, dict) and v.get("faltan"))
+        obj["st_own_effects"] = sum(1 for v in report.values() if isinstance(v, dict) and v.get("propias"))
         obj["st_missing_textures"] = len(miss)  # the importer repeats the warning in its own message
         if miss:
             self.report({"WARNING"}, rpt_("{} of {} materials without textures (e.g. {}): not found in {}. "
                                           "Check the Root folder").format(len(miss), len(report), miss[0], char_dir))
-        elif obj["st_missing_effects"]:
-            self.report({"WARNING"}, rpt_(EFFECTS_WARNING).format(obj["st_missing_effects"]))
         else:
             self.report({"INFO"}, rpt_("{}/{} materials set up (details in the console)").format(done, len(report)))
         return {"FINISHED"}

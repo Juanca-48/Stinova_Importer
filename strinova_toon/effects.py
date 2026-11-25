@@ -1,13 +1,15 @@
 """The few animated effect materials on the characters' own meshes: Celestia's ribbon, the sparkles on Flavia's
 train, the breathing stars of Eika and Kokona, and the game's general effect material ("layer": the glow over
-Flavia's flames, Kanami's wings, MoBai's cloak, Meredith's letters), whose switches say what it does. The game's node graphs aren't in its data: each look is built
-from the material's textures and colours to match the reference videos, and moves with the scene's frame.
+Flavia's flames, Kanami's wings, MoBai's cloak, Meredith's letters), whose switches say what it does. The game's node graphs aren't in its data:
+each look is built from the material's textures and colours to match the reference videos, and moves with the
+scene's frame. The shared textures the user doesn't have are replaced by the add-on's own (own_textures.py).
 shortcut: the ribbon's waving (WP_*, moved in the vertex shader) and the sparkles' dissolve are left out.
 """
 import os
+import bpy
 from math import tau
-from . import common
-from .shading import frame, math, mix_rgb, node, pick, shader_out, soft_step, tex, vmath
+from . import common, own_textures
+from .shading import frame, math, mix_rgb, node, pick, shader_out, soft_step, vmath
 
 KINDS = {"ribbon": ("T_rgb", "AlphaMaskB_Tex", "AlphaMaskB_Tex03", "Color_T3", "MainTexture"),
          "sparkle": ("MainTexture", "Noise"), "breath": ("MainTex",), "layer": ("MainTexture",)}
@@ -34,6 +36,27 @@ def find(entry, tex_idx, skin):
     if not path and root and rel:
         path = os.path.join(os.path.dirname(root), *rel.rsplit(".", 1)[0].split("/")) + ".png"
     return path if path and os.path.isfile(path) else None
+
+
+def image(source, colorspace):
+    """The image of a file, or of a texture of our own ("own:<name>"). One datablock per colour space: effects
+    share textures and some read them as colour, others as data."""
+    if source.startswith("own:"):
+        return own_textures.make(source[4:], colorspace)
+    full = os.path.normcase(os.path.normpath(source))
+    for img in bpy.data.images:
+        if img.filepath and img.colorspace_settings.name == colorspace and os.path.normcase(os.path.normpath(bpy.path.abspath(img.filepath))) == full:
+            return img
+    img = bpy.data.images.load(source, check_existing=False)
+    img.colorspace_settings.name = colorspace
+    return img
+
+
+def tex(nt, source, colorspace, x, y, vector=None):
+    n = node(nt, "ShaderNodeTexImage", x, y, image=image(source, colorspace))
+    if vector is not None:
+        nt.links.new(vector, n.inputs["Vector"])
+    return n
 
 
 def seconds(nt, speed, x, y):
@@ -183,10 +206,11 @@ def layer(nt, files, sca, cols, sw):
 
 
 def setup(mat, data, kind, tex_idx, skin, report):
-    """Build the effect `kind` on `mat`. Without one of its textures it is transparent: as imported it would
-    show the mesh's grey vertex colours."""
+    """Build the effect `kind` on `mat`. Without a texture nor a stand-in for it, it is transparent: as imported
+    it would show the mesh's grey vertex colours."""
     textures = data["Textures"]
-    files = {k: find(textures[k], tex_idx, skin) for k in KINDS[kind] + OPTIONAL if textures.get(k)}
+    names = {k: textures[k]["ObjectName"].split("'")[1] for k in KINDS[kind] + OPTIONAL if textures.get(k)}
+    files = {k: find(textures[k], tex_idx, skin) or (f"own:{n}" if n in own_textures.OWN else None) for k, n in names.items()}
     nt = mat.node_tree
     blend = data.get("Properties", {}).get("BasePropertyOverrides", {}).get("BlendMode")
     nt.animation_data_clear()
@@ -217,5 +241,6 @@ def setup(mat, data, kind, tex_idx, skin, report):
     mat.surface_render_method = "BLENDED" if blend in ("BLEND_Translucent", "BLEND_Additive") else "DITHERED"
     mat.use_backface_culling = False
     mat["st_effect"] = kind  # no outline
-    lost = [textures[k]["ObjectName"].split("'")[1] for k in KINDS[kind] if not files.get(k)]
-    report[mat.name] = {"tipo": f"efecto {kind}", "texturas": [os.path.basename(p) for p in files.values() if p], "faltan": lost}
+    lost = [names[k] for k in names if not (files[k] or k in OPTIONAL)]
+    report[mat.name] = {"tipo": f"efecto {kind}", "texturas": [os.path.basename(p) for p in files.values() if p], "faltan": lost,
+                        "propias": [n for k, n in names.items() if files[k] == f"own:{n}"]}
