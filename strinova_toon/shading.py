@@ -89,6 +89,7 @@ MISSING = "falta textura: "
 NO_DATA = "sin datos de material, se deja igual"  # report entry of a material with no JSON nor bundled data  # report entry of a material whose texture file isn't in the folder
 
 
+MATCAPS_NOTE = " | {} materials without the game's shared matcaps: set the FModel export folder in the preferences and import again"
 EFFECTS_NOTE = " | {} animated effects with the add-on's own textures: for the game's, set the FModel export folder in the preferences"
 
 
@@ -112,6 +113,27 @@ def pick(idx, name, skin):
         if f"{os.sep}{skin}{os.sep}" in p:
             return p
     return paths[0] if paths else None
+
+
+def locate(idx, entry, skin, characters, beside=None):
+    """The file of a texture of a material's data. By its path in the game (ObjectPath), as different textures share a
+    name: in the folder indexed, then in the game's Characters folders known (shared matcaps are in Characters\PBR).
+    By name alone if it isn't there; a shared one only from the folder of `beside` (the material's colour texture):
+    other skins have matcaps of their own with the same names."""
+    name = entry["ObjectName"].split("'")[1]
+    rel = entry.get("ObjectPath", "").rsplit("/Characters/", 1)[-1].rsplit(".", 1)[0] + ".png"
+    if "/" in rel:
+        tail = "/" + rel.lower()
+        for p in idx.get(name.lower(), ()):
+            if p.replace(os.sep, "/").lower().endswith(tail):
+                return p
+        for root in characters:
+            p = os.path.join(root, *rel.split("/"))
+            if os.path.isfile(p):
+                return p
+    by_name = pick(idx, name, skin)
+    shared = rel.startswith("PBR/") and beside and by_name
+    return None if shared and os.path.dirname(by_name) != os.path.dirname(beside) else by_name
 
 
 def skin_of(name, fallback):
@@ -400,12 +422,13 @@ def shader_out(nt, color, alpha, out_node, x, y):
 
 
 # ---------- node groups ----------
-GROUP_VERSION = 14  # bump when a group changes; 2 = colours and light objects per character (and the outline
+GROUP_VERSION = 15  # bump when a group changes; 2 = colours and light objects per character (and the outline
 #   group's first version mark: older unmarked ST Outline groups, without the no-COL0 fallback, get rebuilt);
 #   3 = matcap UV without Vector Transform (broken in Blender 5.3); 6 = panel colours, shadow softness, rim;
 #   10 = shadow ramps, specular, hair highlight; 11 = hair shadow on the face;
 #   12 = environment reflection, specular from Mask2's B; 13 = Spec1 curve;
-#   14 = emission times the base colour
+#   14 = emission times the base colour;
+#   15 = outline as an instance, normal maps without tangents (playback speed)
 
 
 def shared_group(name, typ, version=None):
@@ -898,6 +921,49 @@ def tex(nt, path, colorspace, x, y, vector=None):
     return n
 
 
+def build_normal_group():
+    """Tangent-space normal map without mesh tangents: Blender recomputes those on the CPU, for the whole mesh, every
+    time it deforms. A Bump node fed with U (or V) tilts the normal against that coordinate's direction on the
+    surface, so the GPU finds the tangent and the bitangent by itself."""
+    ng, built = shared_group("ST Normal Map", "ShaderNodeTree")
+    if built:
+        return ng
+    sock(ng, "Normal", "OUTPUT", "NodeSocketVector")
+    sock(ng, "Color", "INPUT", "NodeSocketColor", (0.5, 0.5, 1.0, 1.0))
+    nt = ng
+    gi, go = node(nt, "NodeGroupInput", -900, 0), node(nt, "NodeGroupOutput", 1100, 0)
+    col = node(nt, "ShaderNodeSeparateColor", -700, 0)
+    nt.links.new(gi.outputs["Color"], col.inputs[0])
+    uv = node(nt, "ShaderNodeSeparateXYZ", -700, -300)
+    nt.links.new(node(nt, "ShaderNodeUVMap", -900, -300, uv_map="UV0").outputs[0], uv.inputs[0])
+    N = node(nt, "ShaderNodeNewGeometry", -700, -600).outputs["Normal"]
+
+    def along(coord, y):
+        bump = node(nt, "ShaderNodeBump", -450, y)
+        bump.inputs["Strength"].default_value, bump.inputs["Distance"].default_value = 1.0, 1.0
+        nt.links.new(coord, bump.inputs["Height"])
+        nt.links.new(N, bump.inputs["Normal"])
+        flat = node(nt, "ShaderNodeVectorMath", -50, y, operation="SCALE")  # its part along the normal
+        nt.links.new(N, flat.inputs[0])
+        nt.links.new(vmath(nt, "DOT_PRODUCT", bump.outputs[0], N, -250, y - 100).outputs["Value"], flat.inputs["Scale"])
+        return vmath(nt, "NORMALIZE", vmath(nt, "SUBTRACT", flat.outputs[0], bump.outputs[0], 130, y).outputs[0], None, 310, y).outputs[0]
+
+    def times(v, ch, y, sign=1.0):
+        k = math(nt, "MULTIPLY_ADD", col.outputs[ch], 2.0 * sign, 310, y + 120)
+        nt.nodes[-1].inputs[2].default_value = -1.0 * sign
+        s = node(nt, "ShaderNodeVectorMath", 500, y, operation="SCALE")
+        nt.links.new(v, s.inputs[0])
+        nt.links.new(k, s.inputs["Scale"])
+        return s.outputs[0]
+
+    t = times(along(uv.outputs["X"], 200), 0, 200)
+    b = times(along(uv.outputs["Y"], -200), 1, -200, -1.0)  # UE normal maps are DirectX style: green flipped
+    n = times(N, 2, -600)
+    total = vmath(nt, "ADD", vmath(nt, "ADD", t, b, 700, 0).outputs[0], n, 850, 0).outputs[0]
+    nt.links.new(vmath(nt, "NORMALIZE", total, None, 980, 0).outputs[0], go.inputs[0])
+    return ng
+
+
 def normal_nodes(nt, path, groups):
     """Normal map from `path` (or the geometry's normal without one) into the Normal input of each
     group node. Returns (nodes, frame label)."""
@@ -907,29 +973,25 @@ def normal_nodes(nt, path, groups):
             nt.links.new(geo.outputs["Normal"], g.inputs["Normal"])
         return [geo], "Geometry normal (no normal map)"
     n_img = tex(nt, path, "Non-Color", -800, -150)
-    # UE normal maps are DirectX style: flip green for Blender
-    sep = node(nt, "ShaderNodeSeparateColor", -550, -150)
-    inv = node(nt, "ShaderNodeMath", -380, -150, operation="SUBTRACT")
-    inv.inputs[0].default_value = 1.0
-    comb = node(nt, "ShaderNodeCombineColor", -220, -150)
-    nm = node(nt, "ShaderNodeNormalMap", -60, -150, uv_map="UV0")
-    nt.links.new(n_img.outputs["Color"], sep.inputs[0])
-    nt.links.new(sep.outputs[0], comb.inputs[0])
-    nt.links.new(sep.outputs[1], inv.inputs[1])
-    nt.links.new(inv.outputs[0], comb.inputs[1])
-    nt.links.new(sep.outputs[2], comb.inputs[2])
-    nt.links.new(comb.outputs[0], nm.inputs["Color"])
+    nm = node(nt, "ShaderNodeGroup", -450, -150, node_tree=build_normal_group())
+    nt.links.new(n_img.outputs["Color"], nm.inputs["Color"])
     for g in groups:
         nt.links.new(nm.outputs[0], g.inputs["Normal"])
-    return [n_img, sep, inv, comb, nm], "Normal map (DirectX to Blender: green channel flipped)"
+    return [n_img, nm], "Normal map (DirectX)"
 
 
-def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report):
+def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report, characters=()):
     skin = skin_of(mat.name, mesh_skin)
     t = {k: v["ObjectName"].split("'")[1] for k, v in data.get("Textures", {}).items() if v}  # FModel writes null for unresolved textures
+
+    def found(key):
+        entry = data.get("Textures", {}).get(key)
+        return locate(tex_idx, entry, skin, characters, base_p) if entry else None
+
+    base_p = None
     sca, cols, sw = data.get("Scalars", {}), data.get("Colors", {}), data.get("Switches", {})
     props = data.get("Properties", {}).get("BasePropertyOverrides", {})
-    base_p = pick(tex_idx, t.get("BaseMap", ""), skin)
+    base_p = found("BaseMap")
     from . import effects  # it uses this module's helpers
     kind = None if base_p else effects.kind_of(data)
     if kind:
@@ -962,11 +1024,11 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
     nt.links.new(g.outputs["Shader"], out.inputs["Surface"])
     # second instance only provides the SDF/MatCap UV, so the texture -> group link is not a cycle
     g_uv = node(nt, "ShaderNodeGroup", -500, -350, node_tree=g.node_tree, label="UV only")
-    used = [os.path.basename(base_p)]
+    used, no_matcap = [os.path.basename(base_p)], False
     normal, normal_label, extra_tex = [], "Normal", []  # nodes to frame at the end
     # the ramp: one for the material, or per pixel in Mask1's red, in steps of 0.1 (decoded from 287
     # masks: faces 4, hair 10, skin 4 / 5 / 7; 0.06 = slack for the texture compression)
-    mask, mask_p = None, pick(tex_idx, t.get("Mask1", ""), skin)
+    mask, mask_p = None, found("Mask1")
 
     def mask1():
         nonlocal mask
@@ -990,7 +1052,7 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
             g.inputs["Hair Shadow"].default_value = 1.0
             # 0.7 cm over the game's: below it the lids shade the whites of the eyes here
             g.inputs["Hair Shadow Bias"].default_value = 0.007 + 0.01 * max(0.0, sca.get("HairShadowBias", 0.8))
-        sdf_p = pick(tex_idx, t["FaceShadowMask"], skin)
+        sdf_p = found("FaceShadowMask")
         if sdf_p:
             sdf = tex(nt, sdf_p, "Non-Color", -200, -250, g_uv.outputs["SDF UV"])
             nt.links.new(sdf.outputs["Color"], g.inputs["SDF"])
@@ -1005,11 +1067,13 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
         if c:
             g.inputs["Rim Color"].default_value = (c["R"], c["G"], c["B"], 1)
         g.inputs["Rim Use Base"].default_value = float(bool(sw.get("RimLightUseBaseColor")))
-        nrm_p = pick(tex_idx, t.get("NormalMap", ""), skin) if sw.get("NeedNormalMap") else None
+        nrm_p = found("NormalMap") if sw.get("NeedNormalMap") else None
         normal, normal_label = normal_nodes(nt, nrm_p, (g, g_uv))
         if nrm_p:
             used.append(os.path.basename(nrm_p))
-        mc_p = pick(tex_idx, t.get("MatCapTexture", ""), skin) if sw.get("NeedMatCap") else None
+        mc_p = found("MatCapTexture") if sw.get("NeedMatCap") else None
+        no_matcap = (not mc_p and sw.get("NeedMatCap") and sca.get("MatCapPow", 0.0) > 0
+                     and "PBR" in data["Textures"].get("MatCapTexture", {}).get("ObjectPath", "").split("/"))  # the shared folder
         # a 4-matcap atlas needs Mask1 to pick each pixel's quarter; without it the whole atlas would
         # tint the character, so no matcap
         atlas = sw.get("NeedMatCap4text")
@@ -1052,8 +1116,8 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
             g.inputs["View Limit"].default_value = sca.get("ViewLimit", 1.0)
             g.inputs["View Limit Blur"].default_value = max(0.001, sca.get("ViewLimitBlur", 0.1))
         # metal / roughness / strength
-        mix_p = pick(tex_idx, t.get("MixTex", ""), skin) if sw.get("UseMetallicTex") or sw.get("UseRoughnessTex") else None
-        m2_p = pick(tex_idx, t.get("Mask2", ""), skin) if sw.get("PBR") and sw.get("NeedMask2") else None
+        mix_p = found("MixTex") if sw.get("UseMetallicTex") or sw.get("UseRoughnessTex") else None
+        m2_p = found("Mask2") if sw.get("PBR") and sw.get("NeedMask2") else None
         env = sca.get("IBLBrightness", 0.2)
         fixed = cols.get("Mask2(0-1)") if sw.get("PBR") and not m2_p else None
         if fixed:
@@ -1093,7 +1157,7 @@ def setup_material(mat, data, tex_idx, mesh_skin, face_group, toon_group, report
     translucent = props.get("BlendMode") == "BLEND_Translucent"
     mat.surface_render_method = "BLENDED" if translucent else "DITHERED"
     mat.use_backface_culling = not props.get("TwoSided", False)
-    report[mat.name] = {"tipo": "papel" if paper else "face" if is_face else "toon", "texturas": used}
+    report[mat.name] = {"tipo": "papel" if paper else "face" if is_face else "toon", "texturas": used, "sin matcap": no_matcap}
 
 
 # ---------- lighting panel in the rig (HSV wheels in the viewport, like Gacha Setup's Genshin panel) ----------
@@ -1409,8 +1473,11 @@ def build_outline_gn():
     smi = node(nt, "GeometryNodeSetMaterialIndex", 200, 100)
     nt.links.new(flip.outputs["Mesh"], smi.inputs["Geometry"])
     nt.links.new(math(nt, "ADD", idx.outputs[0], gi.outputs["First Outline Slot"], 100, -150), smi.inputs["Material Index"])
+    # an instance, not one mesh with the body: merging them took 20 ms per frame, in a single thread
+    hull = node(nt, "GeometryNodeGeometryToInstance", 350, 100)
+    nt.links.new(smi.outputs["Geometry"], hull.inputs[0])
     join = node(nt, "GeometryNodeJoinGeometry", 500, 0)
-    nt.links.new(smi.outputs["Geometry"], join.inputs[0])
+    nt.links.new(hull.outputs[0], join.inputs[0])
     nt.links.new(gi.outputs["Geometry"], join.inputs[0])
     nt.links.new(join.outputs[0], go.inputs["Geometry"])
     return ng
@@ -1465,6 +1532,9 @@ def ensure_outline(obj):
     mod = obj.modifiers.get("ST Outline") or obj.modifiers.new("ST Outline", "NODES")
     mod.node_group = build_outline_gn()
     mod_input(mod, "First Outline Slot").value = len(originals)
+    hide = obj.modifiers.find(paper.HIDE)
+    if hide > 0:  # characters from before: it doesn't delete the outline's instance
+        obj.modifiers.move(hide, 0)
     return mod
 
 
@@ -1508,6 +1578,16 @@ def read_material(path):
     return data if isinstance(data, dict) and "Textures" in data else None
 
 
+def material_data(path, name, skin, char_dir):
+    """A character material's data: its JSON's, completed with the bundled one's. FModel's export lacks the switches
+    (and some scalars) inherited from the parent material, which the bundled data has."""
+    data, known = read_material(path), bundled_material(name, skin, char_dir)
+    if not data or not known:
+        return data or known
+    return {**data, "Switches": {**data.get("Switches", {}), **known.get("Switches", {})},
+            "Scalars": {**known.get("Scalars", {}), **data.get("Scalars", {})}}
+
+
 def run(obj, char_dir):
     arm = obj.find_armature()
     mesh_skin = skin_of(obj.name, "")
@@ -1520,6 +1600,8 @@ def run(obj, char_dir):
     else:
         ensure_lighting_panel(bpy.context, obj)  # after ensure_rig: it aims the sun with the sun handle
     ramp_image(char_dir)  # before the groups, which are reused once built
+    roots = (common.skin_assets(char_dir) if "SkinAssets" in os.path.normpath(char_dir).split(os.sep) else None, common.fmodel_root())
+    characters = [os.path.join(r, "Characters") for r in roots if r]
     toon_g, face_g = build_toon_group(), build_face_group()
     mod = obj.modifiers.get("ST Light Vectors") or obj.modifiers.new("ST Light Vectors", "NODES")
     mod.node_group = build_vectors_gn()
@@ -1533,11 +1615,11 @@ def run(obj, char_dir):
         base_name = re.sub(r"\.\d{3}$", "", mat.name)  # Blender adds .001 on name clashes (re-imports, FBX)
         skin = skin_of(base_name, mesh_skin)
         jp = pick(json_idx, base_name, skin)  # a JSON next to the textures wins (newer or edited export)
-        data = read_material(jp) or bundled_material(base_name, skin, char_dir)
+        data = material_data(jp, base_name, skin, char_dir)
         if not data:
             report[mat.name] = NO_DATA
             continue
-        setup_material(mat, data, tex_idx, mesh_skin, face_g, toon_g, report)
+        setup_material(mat, data, tex_idx, mesh_skin, face_g, toon_g, report, characters)
     ensure_outline(obj)
     return report
 
@@ -1791,6 +1873,7 @@ class STRINOVA_OT_setup(bpy.types.Operator):
             print(f"[Strinova] {k}: {v}")
         done = sum(isinstance(v, dict) for v in report.values())
         miss = missing_textures(report)
+        obj["st_missing_matcaps"] = sum(1 for v in report.values() if isinstance(v, dict) and v.get("sin matcap"))
         obj["st_own_effects"] = sum(1 for v in report.values() if isinstance(v, dict) and v.get("propias"))
         obj["st_missing_textures"] = len(miss)  # the importer repeats the warning in its own message
         if miss:

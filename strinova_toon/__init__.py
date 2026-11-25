@@ -130,6 +130,7 @@ class STRINOVA_PT_lighting(bpy.types.Panel):
         omod = mesh.modifiers.get("ST Outline")
         if omod and omod.node_group and not mesh.get("st_weapon"):  # a weapon's is in its own section
             col.prop(shading.mod_input(omod, "Width"), "value", text="Outline width")
+            col.prop(omod, "show_viewport", text="Outline in viewport")  # off: faster playback; renders keep it
 
 
 class STRINOVA_AddonPreferences(bpy.types.AddonPreferences):

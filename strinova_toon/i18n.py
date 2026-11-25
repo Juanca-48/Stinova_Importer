@@ -15,6 +15,7 @@ ES = {
     "Right hand (trigger)": "Mano derecha (gatillo)",
     "Left hand (grip)": "Mano izquierda (agarre)",
     "Outline width": "Grosor contorno",
+    "Outline in viewport": "Contorno en el viewport",
     "Lighting": "Iluminación",
     "Lighting Type:": "Tipo de iluminación:",
     "Rig Panel": "Panel del rig",
@@ -91,6 +92,8 @@ ES = {
         "{} de {} materiales sin texturas (p. ej. {}): no están en {}. Revisa la Carpeta raíz",
     " | {} materials without textures: check the Root folder ({})":
         " | {} materiales sin texturas: revisa la Carpeta raíz ({})",
+    " | {} materials without the game's shared matcaps: set the FModel export folder in the preferences and import again":
+        " | {} materiales sin los MatCap compartidos del juego: pon la carpeta de exportación de FModel en las preferencias y vuelve a importar",
     " | {} animated effects with the add-on's own textures: for the game's, set the FModel export folder in the preferences":
         " | {} efectos animados con texturas propias del add-on: para las del juego, pon la carpeta de exportación de FModel en las preferencias",
     " | {} materials without textures: not found in {}": " | {} materiales sin texturas: no están en {}",

@@ -126,7 +126,10 @@ También están en Object Properties > Custom Properties del rig.
       las del juego exactas, en FModel guarda RampTexture2DArray como textura
       (PaperMan\MaterialMaster\Character; 27 PNG) y vuelve a importar el
       personaje. Van en la imagen "ST Ramps", dentro del .blend.
-    * Matcap: solo donde marca la máscara del material, y con esa fuerza.
+    * Matcap: solo donde marca la máscara del material, y con esa fuerza. Muchos
+      son compartidos entre personajes, en la carpeta Characters\PBR de FModel:
+      expórtala también. Con un modelo guardado en otro sitio, pon la carpeta de
+      FModel en las preferencias.
     * Emisión: solo las partes que marca la máscara (llamas, gemas...).
     * Brillo del pelo: los mechones pintados, donde miran a la cámara.
     * Metal y especular: de las texturas del material (beta, ver sección 11).
@@ -161,6 +164,8 @@ También están en Object Properties > Custom Properties del rig.
       1 = la rampa tal cual.
     * Sombra del pelo: fuerza de la sombra del pelo en la cara (0 = apagada).
     * Grosor contorno: grosor de la línea del contorno.
+    * Contorno en el viewport: apagado, la reproducción va más rápida; los
+      renders conservan el contorno.
   En la escena las ruedas llevan el nombre en inglés: Ambient, Sharp Lit, Sharp
   Shadow, Soft Lit, Soft Shadow, Rim Lit y Rim Shadow.
 - Los personajes importados con la 1.2 o anterior conservan sus dos ruedas

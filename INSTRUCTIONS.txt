@@ -123,6 +123,8 @@ They are also in the rig's Object Properties > Custom Properties.
       (PaperMan\MaterialMaster\Character; 27 PNGs) and import the character
       again. They are kept in the "ST Ramps" image, inside the .blend.
     * Matcap: only where the material's mask says, and as strong as it says.
+      Many are shared by the characters, in FModel's Characters\PBR folder: export
+      it too. With a model kept elsewhere, set the FModel folder in the preferences.
     * Emission: only the parts the mask marks (flames, gems...).
     * Hair highlight: the painted strands, where they face the camera.
     * Metal and specular: from the material's textures (beta, see section 11).
@@ -156,6 +158,7 @@ They are also in the rig's Object Properties > Custom Properties.
       1 = the ramp as it is.
     * Hair Shadow: strength of the shadow the hair casts on the face (0 = off).
     * Outline width: thickness of the outline.
+    * Outline in viewport: off, playback is faster; renders keep the outline.
 - Characters imported with 1.2 or earlier keep their two wheels (Light and
   Ambient, now called Sharp Lit and Sharp Shadow) and their shading until they
   are imported again.
