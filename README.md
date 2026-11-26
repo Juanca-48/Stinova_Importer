@@ -1,5 +1,7 @@
 # Strinova Toon Setup
 
+![Strinova Toon Setup](images/Frontpage_addon.jpg)
+
 **English** · [Español](README.es.md)
 
 Blender add-on that imports **Strinova** characters and gets them ready to animate and render with a single button.
@@ -9,14 +11,14 @@ It works with both model formats, **`.uemodel`** and **`.fbx`**, wherever they c
 ## What it does
 
 - **Imports** `.uemodel` and `.fbx`, or a skin's whole folder: brings in the 3D model and its paper version together. Textures near the model are found by themselves.
-- **Toon shading** like in the game: materials rebuilt from the textures, smooth face shadows and outlines.
+- **Toon shading** like in the game: materials rebuilt from the textures, shadow color ramps per material, smooth face shadows, highlights, glowing parts and outlines.
 - **Per-character lighting**: a sun moved with a control, hard and soft light and shadow colors, rim light and shadow softness. The colors are set with wheels in the rig or in the side panel, for the selected character only.
 - **Full rig** with [Gacha Setup](https://github.com/PaoloESAN/gacha-setup), with elbows and knees by rotation or by poles, plus hair, clothes and chest physics you turn on with a checkbox.
 - **Tidy face**: expression controls grouped into Eyes, Pupils, Brows, Mouth, Lips and Head, with colors, a look-at control and blinking.
 - **Paper version**: switch between the 3D model and the paper one in a single frame, like in the game.
 - **Accessories**: masks and hats with their own bone and a switch to show or hide them.
 - **Several characters** in the same scene, each with its own light.
-- **Weapons** with their own button: body, sight, pendant and magazine assembled, with their shading, and a button to put them in the character's hand.
+- **Weapons** with their own button: body, sight, pendant and magazine assembled, with their shading and their own light, and a button to put them in the character's hand, where they take the character's light.
 
 ## Requirements
 

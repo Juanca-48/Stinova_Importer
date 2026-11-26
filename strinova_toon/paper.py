@@ -113,14 +113,14 @@ def hide_group():
 
 
 def ensure_switch(rig):
-    """rig["st_paper"]: off = 3D model, on = paper. Each mesh ends with an "ST Hide" modifier
-    that the property switches on to hide it."""
+    """rig["st_paper"]: off = 3D model, on = paper. Each mesh starts with an "ST Hide" modifier
+    that the property switches on to hide it (first: nothing else is computed for a hidden mesh)."""
     for o in bpy.data.objects:
         if o.type != "MESH" or o.find_armature() != rig:
             continue
         mod = o.modifiers.get(HIDE) or o.modifiers.new(HIDE, "NODES")
         mod.node_group = hide_group()
-        o.modifiers.move(o.modifiers.find(HIDE), len(o.modifiers) - 1)  # last: hides the outline too
+        o.modifiers.move(o.modifiers.find(HIDE), 0)
         common.drive_modifier(mod, rig, PAPER_PROP, "1 - v" if o.get(PAPER_PROP) else "v", False,
                               tip_("Shows the paper version instead of the 3D model"))
 

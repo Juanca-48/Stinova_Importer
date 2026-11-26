@@ -15,6 +15,10 @@ ES = {
     "Right hand (trigger)": "Mano derecha (gatillo)",
     "Left hand (grip)": "Mano izquierda (agarre)",
     "Outline width": "Grosor contorno",
+    "Outline in viewport": "Contorno en el viewport",
+    "Fast viewport": "Viewport rápido",
+    "For animating: shows flat textures, without lighting, outline or effects, in the 3D views only. Nothing is lost (colours, lights, keyframes) and renders don't change":
+        "Para animar: muestra las texturas planas, sin iluminación, contorno ni efectos, solo en las vistas 3D. No se pierde nada (colores, luces, keyframes) y los renders no cambian",
     "Lighting": "Iluminación",
     "Lighting Type:": "Tipo de iluminación:",
     "Rig Panel": "Panel del rig",
@@ -33,12 +37,15 @@ ES = {
     "Rim Scale": "Intensidad del borde",
     "Extra Rim": "Borde extra",
     "Shadow Softness": "Suavidad de la sombra",
+    "Hair Shadow": "Sombra del pelo",
+    "Shadow the hair casts on the face": "Sombra que el pelo hace en la cara",
     "Strength of the rim light": "Fuerza de la luz de borde",
     "Rim light for every material, also those whose game data has none":
         "Luz de borde para todos los materiales, también los que no la traen en los datos del juego",
     "Edge between light and shadow: 0 hard, higher softer (1 = default)":
         "Borde entre luz y sombra: 0 duro, más alto más suave (1 = por defecto)",
     "Paper version": "Versión de papel",
+    "Mask": "máscara",
     "Show {}": "Mostrar {}",
     "Physics": "Física",
     "Select the mesh or its armature": "Selecciona la malla o su armature",
@@ -89,6 +96,10 @@ ES = {
         "{} de {} materiales sin texturas (p. ej. {}): no están en {}. Revisa la Carpeta raíz",
     " | {} materials without textures: check the Root folder ({})":
         " | {} materiales sin texturas: revisa la Carpeta raíz ({})",
+    " | {} materials without the game's shared matcaps: set the FModel export folder in the preferences and import again":
+        " | {} materiales sin los MatCap compartidos del juego: pon la carpeta de exportación de FModel en las preferencias y vuelve a importar",
+    " | {} animated effects with the add-on's own textures: for the game's, set the FModel export folder in the preferences":
+        " | {} efectos animados con texturas propias del add-on: para las del juego, pon la carpeta de exportación de FModel en las preferencias",
     " | {} materials without textures: not found in {}": " | {} materiales sin texturas: no están en {}",
     " | no facial expressions in this model: import the lobby one, {}":
         " | este modelo no trae expresiones faciales: importa el de lobby, {}",
