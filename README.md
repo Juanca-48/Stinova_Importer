@@ -1,5 +1,7 @@
 # Strinova Toon Setup
 
+![Strinova Toon Setup](images/Frontpage_addon.jpg)
+
 **English** · [Español](README.es.md)
 
 Blender add-on that imports **Strinova** characters and gets them ready to animate and render with a single button.

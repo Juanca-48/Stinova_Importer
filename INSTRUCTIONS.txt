@@ -127,7 +127,7 @@ They are also in the rig's Object Properties > Custom Properties.
       it too. With a model kept elsewhere, set the FModel folder in the preferences.
     * Emission: only the parts the mask marks (flames, gems...).
     * Hair highlight: the painted strands, where they face the camera.
-    * Metal and specular: from the material's textures (beta, see section 11).
+    * Metal and specular: from the material's textures (approximate, see section 11).
     * Animated effects (Celestia's ribbon, Flavia's flames and sparkles, Kanami's
       wings...): they move by themselves with the timeline.
 - Outline: inverted hull ("ST Outline" modifier). No outline on the face and
@@ -354,7 +354,7 @@ panel's "Weapons" section. Importing a character never brings its weapon.
   Weapons keep a fixed tint.
 - The game's rim light formula isn't in its data: it is read from the
   parameters' names and may not match every skin.
-- Beta: the game's specular formula isn't in its data, so metal and shiny
+- The game's specular formula isn't in its data, so metal and shiny
   materials use a generic highlight, and reflect a generic sky and ground.
 - Hair shadow on the face: in EEVEE only hair that is in view casts it, and its
   edge can look a little noisy with few samples.

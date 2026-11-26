@@ -132,7 +132,7 @@ También están en Object Properties > Custom Properties del rig.
       FModel en las preferencias.
     * Emisión: solo las partes que marca la máscara (llamas, gemas...).
     * Brillo del pelo: los mechones pintados, donde miran a la cámara.
-    * Metal y especular: de las texturas del material (beta, ver sección 11).
+    * Metal y especular: de las texturas del material (aproximado, ver sección 11).
     * Efectos animados (la cinta de Celestia, las llamas y destellos de Flavia,
       las alas de Kanami...): se mueven solos con la línea de tiempo.
 - Contorno: casco invertido (modificador "ST Outline"). Sin contorno en cara
@@ -368,7 +368,7 @@ Las armas se importan aparte, con el botón "Importar arma" de la sección
   exactos. Las armas conservan un tinte fijo.
 - La fórmula de la luz de borde del juego no está en sus datos: se deduce de
   los nombres de los parámetros y puede no coincidir en todas las skins.
-- Beta: la fórmula del especular del juego no está en sus datos, así que el
+- La fórmula del especular del juego no está en sus datos, así que el
   metal y los materiales brillantes usan un brillo genérico y reflejan un cielo
   y un suelo genéricos.
 - Sombra del pelo en la cara: en EEVEE solo la hace el pelo que se ve en
