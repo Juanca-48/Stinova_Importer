@@ -107,7 +107,7 @@ def import_file(path):
     """New objects of one imported model."""
     before = set(bpy.data.objects)
     if path.lower().endswith(".fbx"):
-        bpy.ops.import_scene.fbx(filepath=path, ignore_leaf_bones=True)
+        bpy.ops.import_scene.fbx(filepath=path, ignore_leaf_bones=False)  # as the character's: keep the real tip bones
     else:
         d, f = os.path.split(path)
         bpy.ops.uf.import_uemodel(filepath=path, directory=d, files=[{"name": f}])

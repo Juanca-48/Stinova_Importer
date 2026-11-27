@@ -2,7 +2,7 @@
 shading and rig operators (through bpy.ops)."""
 import bpy, os, re, glob
 from bpy_extras.io_utils import ImportHelper
-from . import paper, shading, common
+from . import paper, shading, common, rig
 from .common import rpt_
 
 
@@ -98,8 +98,9 @@ def gather_leftovers(context, coll, before_objs, before_colls):
     """Move into `coll` whatever the import created outside it (ST_Light and panel labels land in
     the scene root; a stray new collection). Moved collections keep their view-layer state."""
     sc, vl = context.scene, context.view_layer
+    shared = bpy.data.collections.get(rig.WIDGETS)  # every character's control shapes: stays at the root
     inside = _subtree(coll)
-    for c in [c for c in bpy.data.collections if c not in before_colls and c not in inside]:
+    for c in [c for c in bpy.data.collections if c not in before_colls and c not in inside and c != shared]:
         if any(c.name in p.children for p in bpy.data.collections if p not in before_colls and p != c):
             continue  # nested in another new collection: it moves with its parent
         lc = _layer_collection(vl.layer_collection, c)
@@ -113,7 +114,7 @@ def gather_leftovers(context, coll, before_objs, before_colls):
             lc.exclude, lc.hide_viewport = state
     inside = _subtree(coll)
     for o in bpy.data.objects:
-        if o in before_objs:
+        if o in before_objs or (shared and shared in o.users_collection):
             continue
         outside = [c for c in o.users_collection if c not in inside]
         if outside and not any(c in inside for c in o.users_collection):
@@ -212,8 +213,9 @@ class STRINOVA_OT_import(bpy.types.Operator, ImportHelper):
 
     def _import(self, context, ext, coll, before, host=None):
         if ext == ".fbx":
-            # leaf bones are the *_end tips Blender adds on FBX export; they are not part of the game skeleton
-            bpy.ops.import_scene.fbx(filepath=self.filepath, ignore_leaf_bones=True)
+            # keep leaf bones: these FBX carry no *_end tips, ignoring them dropped the game's own last bones
+            # (fingertips, toes, every physics chain's tip). shortcut: an FBX with *_end bones keeps them too
+            bpy.ops.import_scene.fbx(filepath=self.filepath, ignore_leaf_bones=False)
         else:
             d, f = os.path.split(self.filepath)
             bpy.ops.uf.import_uemodel(filepath=self.filepath, directory=d, files=[{"name": f}])

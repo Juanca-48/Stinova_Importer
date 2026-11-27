@@ -547,6 +547,66 @@ def fix_controls(context, rig, poles=False):
         context.view_layer.update()
 
 
+WIDGETS = "ST Widgets"  # not WGTS*: Gacha's riggers grab and empty collections named like that
+
+
+def _shape_key(o):
+    """A bone draws its shape's mesh, not the object's transform (Rigify parks each copy at its bone)."""
+    me = o.data
+    return (tuple(round(c, 4) for v in me.vertices for c in v.co), tuple(tuple(e.vertices) for e in me.edges),
+            tuple(tuple(p.vertices) for p in me.polygons))
+
+
+def share_widgets(context, rig):
+    """Gacha's rigger gives each character a WGTS_* collection with its own copy of every control shape
+    (~140 objects, ~25 different). One shared collection instead: this rig's bones take the shape already
+    there when it has the same geometry, new ones move in, and the WGTS_* collection goes with what's
+    left (copies, and shapes no bone uses). Returns how many objects were removed."""
+    shared = bpy.data.collections.get(WIDGETS) or bpy.data.collections.new(WIDGETS)
+    sc = context.scene
+    if shared not in (sc.collection, *sc.collection.children_recursive):
+        sc.collection.children.link(shared)
+    for vl in sc.view_layers:  # the bones draw them anyway
+        lc = _layer_coll(vl.layer_collection, shared)
+        if lc:
+            lc.exclude = True
+    known = {_shape_key(o): o for o in shared.objects if o.type == "MESH"}
+    for pb in rig.pose.bones:
+        o = pb.custom_shape
+        if not o or o.type != "MESH" or shared in o.users_collection:
+            continue
+        k = _shape_key(o)
+        if k in known:
+            pb.custom_shape = known[k]
+        else:
+            known[k] = o
+            shared.objects.link(o)
+            for c in o.users_collection:
+                if c != shared:
+                    c.objects.unlink(o)
+    home = rig.users_collection[0] if rig.users_collection else sc.collection
+    removed = 0
+    for c in [c for c in home.children_recursive if c.name.startswith("WGTS")]:
+        for o in list(c.objects):
+            if o.users > len(o.users_collection):  # still some bone's shape (another rig's)
+                shared.objects.link(o)
+                c.objects.unlink(o)
+            else:
+                me = o.data
+                bpy.data.objects.remove(o)
+                removed += 1
+                if me and not me.users:
+                    bpy.data.meshes.remove(me)
+        bpy.data.collections.remove(c)
+    return removed
+
+
+def _layer_coll(lc, coll):
+    if lc.collection == coll:
+        return lc
+    return next((x for x in (_layer_coll(ch, coll) for ch in lc.children) if x), None)
+
+
 class STRINOVA_OT_rig(bpy.types.Operator):
     bl_idname = "strinova.rig_physics"
     bl_label = "Generate rig"
@@ -609,6 +669,7 @@ class STRINOVA_OT_rig(bpy.types.Operator):
             fix_controls(context, rig, context.scene.strinova_ik_mode == "POLES")
         n = apply_inertia(rig)
         skirt.add(context, rig, obj)  # after the physics: the skirt bones are aimed at their children
+        share_widgets(context, rig)
         self.report({"INFO"}, rpt_("Rig ready: {}, {} chains with physics").format(rig.name, n))
         return {"FINISHED"}
 

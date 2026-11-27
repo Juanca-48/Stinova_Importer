@@ -3,8 +3,8 @@
 thighs. Each thigh is a capsule between two empties bone-parented to ORG-thigh (hip and knee); a third, on
 ORG-spine, marks where the knee hangs at rest. The cloth in a leg's way first turns with it around the hip; then a
 vertex still inside a capsule goes to its surface, leaning towards the side the leg swung to (over the thigh, not
-under it). The result is blurred over the mesh so the cloth around follows. The skirt is what the game's bone chains hanging from the hips move (skirt_*, but also
-Kanami's pendent_* panels): their weights, summed, are the "ST Skirt" group.
+under it). The result is blurred over the mesh so the cloth around follows. The skirt is what the game's bone chains hanging from the hips (or the waist, the default
+skins' dress_*) move: skirt_*, but also Kanami's pendent_* panels. Their weights, summed, are the "ST Skirt" group.
 shortcut: no cloth simulation: deep poses can still clip a little, and the cloth doesn't fold. Revisit if needed."""
 import bpy
 from mathutils import Matrix
@@ -23,6 +23,7 @@ SMOOTH = 6  # blur iterations of the push
 DEPTH = (-0.4, 0.3)  # the follow grows from this far above the hip joint to this far below (x thigh length)
 RIBBON = "ST Skirt Ribbon"  # point attribute: how much each vertex is a long, thin chain (a ribbon, a long tail)
 RIBBON_LONG = 1.3  # a chain longer than this many thighs is a ribbon: it swings out with the leg
+RIBBON_SKIRT = 2.0  # ...and than this many times the skirt's median chain
 RIBBON_MIDDLE = "ST Skirt Ribbon Middle"  # point attribute: a ribbon's middle, as a distance from the hip
 
 
@@ -195,19 +196,25 @@ def _dist(p, a, b):
 
 def add(context, rig, obj):
     """Skirt collision for `obj`, rigged by `rig`. Returns False when it has no skirt bones."""
-    hips = rig.data.bones.get("ORG-spine")
     thigh = {s: rig.data.bones.get(f"ORG-thigh.{s}") for s in "LR"}
-    if not hips or not all(thigh.values()):
+    if not all(thigh.values()):
         return False
+    hip_z = max(b.head_local.z for b in thigh.values())
     names, ribbons = set(), {}  # ribbons: bone -> its chain's middle, as a distance from the hip joint
-    for c in hips.children:
-        if c.use_deform and not c.name.startswith("DEF-"):  # the game's own chains, not Rigify's
-            chain = [c] + list(c.children_recursive)
-            names |= {b.name for b in chain}
-            length = sum(b.length for b in chain)
-            if length > RIBBON_LONG * thigh["L"].length:
-                hip = min((thigh[s].head_local - c.head_local).length for s in "LR")
-                ribbons.update({b.name: hip + length / 2 for b in chain})
+    # the game's own chains (not Rigify's) on the hips or, in the default skins (dress_*), on the waist above; those
+    # only if they hang down past the hip joint (not a bow at the waist). A short flared skirt may not: hips' are all in
+    roots = [(c, h == "ORG-spine") for h in ("ORG-spine", "ORG-spine.001") if h in rig.data.bones
+             for c in rig.data.bones[h].children if c.use_deform and not c.name.startswith(("DEF-", "ORG-", "MCH-"))]
+    chains = [(c, ch, sum(b.length for b in ch)) for c, on_hips in roots for ch in [[c] + list(c.children_recursive)]
+              if on_hips or min(b.tail_local.z for b in ch) < hip_z]
+    lengths = sorted(n for _, _, n in chains)
+    median = lengths[len(lengths) // 2] if lengths else 0.0
+    for c, chain, length in chains:
+        names |= {b.name for b in chain}
+        # a ribbon stands out of the skirt: a long skirt's own panels (Flavia's) swung out with the leg and tore apart
+        if length > max(RIBBON_LONG * thigh["L"].length, RIBBON_SKIRT * median):
+            hip = min((thigh[s].head_local - c.head_local).length for s in "LR")
+            ribbons.update({b.name: hip + length / 2 for b in chain})
     groups = {g.index: g.name for g in obj.vertex_groups}
     if not names:
         return False
