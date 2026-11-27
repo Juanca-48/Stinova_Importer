@@ -13,9 +13,9 @@ bl_info = {
 # Strinova (PaperMan) character setup, one module per concern: see the module list in INSTRUCCIONES.txt.
 if "bpy" in locals():  # add-on reload: refresh the submodules too (import_module also loads new ones)
     import importlib
-    for _n in ("common", "i18n", "shading", "own_textures", "effects", "face", "accessory", "rig", "paper", "importer", "weapon", "migrate", "viewport"):
+    for _n in ("common", "i18n", "shading", "own_textures", "effects", "face", "accessory", "skirt", "rig", "paper", "importer", "weapon", "migrate", "viewport"):
         importlib.reload(importlib.import_module(f".{_n}", __package__))
-from . import common, i18n, shading, face, accessory, rig, paper, importer, weapon, migrate, viewport
+from . import common, i18n, shading, face, accessory, skirt, rig, paper, importer, weapon, migrate, viewport
 import bpy
 
 
@@ -88,6 +88,14 @@ class STRINOVA_PT_panel(bpy.types.Panel):
             for prop, _, label in rig.INERTIA_PROPS.values():
                 if prop in arm:
                     sliders.prop(arm, f'["{prop}"]', text=label, slider=True)
+        mod = skirt.modifier(arm) if arm else None
+        if mod:  # animatable (right-click > Insert Keyframe): on only for the shots that need it
+            on = shading.mod_input(mod, "Enabled")
+            body.separator()
+            body.prop(on, "value", text="Skirt collision")
+            sub = body.column()
+            sub.active = on.value
+            sub.prop(shading.mod_input(mod, "Smoothing"), "value", text="Skirt smoothing", slider=True)
         if not common.target_mesh(context):
             col.label(text="Select the mesh or its armature", icon="INFO")
 

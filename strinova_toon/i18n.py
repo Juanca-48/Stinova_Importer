@@ -111,6 +111,8 @@ ES = {
     "Hair inertia": "Inercia pelo",
     "Bangs inertia": "Inercia flequillo",
     "Clothes inertia": "Inercia ropa",
+    "Skirt collision": "Colisión de falda",
+    "Skirt smoothing": "Suavizado de falda",
     "Chest inertia": "Inercia pecho",
     "{}: how much it lags and drags when animating": "{}: cuánto se retrasa y arrastra al animar",
     "Turns hair, clothes and chest physics on": "Activa la física de pelo, ropa y pecho",

@@ -106,6 +106,12 @@ section with its name:
 - Hair / Bangs / Clothes / Chest inertia: how much they lag and drag.
   Starting values: 0.56 / 0.28 / 0.32 / 0.20. Bangs and the front locks
   move half as much as the back hair.
+- Skirt collision (characters with cloth hanging from the hips): when a leg
+  moves, the cloth in its way goes with it (over the thigh, hanging from the
+  knee) instead of being gone through; long ribbons swing out with the leg and
+  droop from their middle. Nothing changes with the legs at rest. Animatable
+  (right-click > Insert Keyframe). Skirt smoothing: how much the cloth around
+  follows; less removes more clipping but can leave sharp folds.
 
 These values are properties of each rig: every character has its own.
 They are also in the rig's Object Properties > Custom Properties.
@@ -374,6 +380,8 @@ panel's "Weapons" section. Importing a character never brings its weapon.
 - An .fbx exported with tools other than Blender may come with another
   scale or with the bone axes changed.
 - Physics doesn't react to moving the root bone or to lifting the legs.
+- Skirt collision isn't a cloth simulation: the cloth doesn't fold, and in
+  extreme poses some clipping can remain. It only reaches the thighs.
 
 
 12. FOR DEVELOPERS
@@ -388,6 +396,7 @@ Modules (strinova_toon folder):
   effects.py    Animated effect materials (ribbons, flames, sparkles).
   own_textures.py  The add-on's own textures for them.
   rig.py        Rig with Gacha Setup, fixes on top of it, and physics.
+  skirt.py      Skirt collision with the thighs.
   face.py       Face sections, gaze, blink and face bones.
   paper.py      Paper version and the 3D / paper switch.
   accessory.py  Accessory bones and switches.

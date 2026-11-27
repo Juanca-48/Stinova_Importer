@@ -109,6 +109,13 @@ desplegable con su nombre:
 - Inercia pelo / flequillo / ropa / pecho: cuánto se retrasan y arrastran.
   Valores iniciales: 0.56 / 0.28 / 0.32 / 0.20. El flequillo y los mechones
   delanteros se mueven la mitad que el pelo de atrás.
+- Colisión de falda (personajes con tela que cuelga de la cadera): al mover
+  una pierna, la tela que está en su camino la acompaña (sobre el muslo,
+  colgando desde la rodilla) en vez de ser atravesada; las cintas largas se
+  abren con la pierna y caen desde su mitad. Con las piernas en reposo no
+  cambia nada. Se puede animar (clic derecho > Insert Keyframe). Suavizado de
+  falda: cuánto acompaña la tela de alrededor; menos quita más cruces, pero
+  puede dejar pliegues bruscos.
 
 Estos valores son propiedades de cada rig: cada personaje tiene los suyos.
 También están en Object Properties > Custom Properties del rig.
@@ -390,6 +397,8 @@ Las armas se importan aparte, con el botón "Importar arma" de la sección
 - Un .fbx exportado con herramientas distintas a Blender puede venir con otra
   escala o con los ejes de los huesos cambiados.
 - La física no reacciona al mover el hueso root ni al levantar las piernas.
+- La colisión de falda no es una simulación de tela: la tela no se pliega y en
+  poses extremas puede quedar algún cruce. Solo tiene en cuenta los muslos.
 
 
 12. PARA DESARROLLADORES
@@ -404,6 +413,7 @@ Módulos (carpeta strinova_toon):
   effects.py    Materiales de efecto animados (cintas, llamas, destellos).
   own_textures.py  Las texturas propias del add-on para ellos.
   rig.py        Rig con Gacha Setup, arreglos sobre él y física.
+  skirt.py      Colisión de la falda con los muslos.
   face.py       Secciones de la cara, mirada, parpadeo y huesos faciales.
   paper.py      Versión de papel y el cambio 3D / papel.
   accessory.py  Huesos e interruptores de accesorios.

@@ -3,7 +3,7 @@ constraint 'physics' for hair, clothes and chest."""
 import bpy, re, math, contextlib
 from mathutils import Vector
 from .common import target_mesh
-from . import shading, face, accessory
+from . import shading, face, accessory, skirt
 from .common import iface_, tip_, rpt_
 
 # ---------- rig + physics ----------
@@ -608,6 +608,7 @@ class STRINOVA_OT_rig(bpy.types.Operator):
                 settings["Use Head Controller"] = 1
             fix_controls(context, rig, context.scene.strinova_ik_mode == "POLES")
         n = apply_inertia(rig)
+        skirt.add(context, rig, obj)  # after the physics: the skirt bones are aimed at their children
         self.report({"INFO"}, rpt_("Rig ready: {}, {} chains with physics").format(rig.name, n))
         return {"FINISHED"}
 
