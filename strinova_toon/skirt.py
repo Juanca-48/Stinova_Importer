@@ -13,10 +13,12 @@ from .shading import node, sock
 
 MOD = "ST Skirt Push"
 GROUP = "ST Skirt"  # vertex group: how much each vertex is skirt
-VERSION = 11  # 2 = each vertex pushed no further than it stood at rest; 3 = the cloth in the way turns with the leg;
+VERSION = 13  # 2 =each vertex pushed no further than it stood at rest; 3 = the cloth in the way turns with the leg;
 #   4 = the rest limit only while the leg is still, exact swing angle; 5 = cloth lies on the thigh, hangs from the knee;
 #   6 = follow grows down from above the hip, cloth turned by a share of the swing (no creases); 7 = from higher up;
-#   9 = ribbons (long chains) swing out with the leg; 10 = and then droop; 11 = from their middle
+#   9 = ribbons (long chains) swing out with the leg; 10 = and then droop; 11 = from their middle;
+#   12 = what is left inside goes out over the thigh as it is, not towards the swing at rest (high legs);
+#   13 = and what the blur pulls back inside goes out again after it
 REST = "ST Skirt Rest {}"  # point attribute: distance to each thigh at rest
 START = 0.2  # the capsule starts this far down the thigh: above, it is the hip, inside the skirt at rest
 SMOOTH = 6  # blur iterations of the push
@@ -57,6 +59,7 @@ def _leg_group():
                       ("Ribbon", "NodeSocketFloat"), ("Ribbon Middle", "NodeSocketFloat")):
         sock(ng, name, "INPUT", typ)
     sock(ng, "Offset", "OUTPUT", "NodeSocketVector")
+    sock(ng, "Surface", "OUTPUT", "NodeSocketFloat")  # the capsule radius used for this vertex
     gi, go = node(ng, "NodeGroupInput", -2600, 0), node(ng, "NodeGroupOutput", 1200, 0)
     P0, H, K, RK = (gi.outputs[k] for k in ("Position", "Hip", "Knee", "Rest Knee"))
     HK = _vm(ng, "SUBTRACT", K, H, -2400, 200)
@@ -125,12 +128,32 @@ def _leg_group():
     C = _vm(ng, "ADD", A, _vm(ng, "SCALE", AB, t, -200, 100), -100, 100)
     v = _vm(ng, "SUBTRACT", P, C, 0, 0)
     radial = _vm(ng, "NORMALIZE", v, None, 100, -100)
-    want = _vm(ng, "NORMALIZE", _vm(ng, "ADD", radial, _vm(ng, "SCALE", lead, 2.0, 100, -350), 250, -200), None, 400, -200)
+    # over the thigh as it is now: across it, in the swing plane, ahead of where it went (= -Dr at 90 deg).
+    # Same size as `lead` (sin swing) and about it when barely swung; `lead` itself turns along the thigh as it
+    # rises, and at 90 deg pushed the cloth along the leg instead of out of it
+    over = _vm(ng, "SUBTRACT", _vm(ng, "SCALE", D, cos_swing, -50, -450), Dr, 100, -450)
+    want = _vm(ng, "NORMALIZE", _vm(ng, "ADD", radial, _vm(ng, "SCALE", over, 2.0, 100, -350), 250, -200), None, 400, -200)
     target = _vm(ng, "ADD", C, _vm(ng, "SCALE", want, R, 550, -200), 700, -100)
     inside = shading.math(ng, "LESS_THAN", _vm(ng, "LENGTH", v, None, 100, 0), R, 250, 100)
     pushed = _vm(ng, "ADD", P, _vm(ng, "SCALE", _vm(ng, "SUBTRACT", target, P, 800, -100), inside, 900, 0), 1000, 0)
     ng.links.new(_vm(ng, "SUBTRACT", pushed, P0, 1100, 0), go.inputs["Offset"])
+    ng.links.new(R, go.inputs["Surface"])
     return ng
+
+
+def _out(ng, P, H, K, R, weight, x, y):
+    """P, but out of the capsule H-K of radius R (straight out from its axis), as much as `weight`."""
+    A = _vm(ng, "ADD", H, _vm(ng, "SCALE", _vm(ng, "SUBTRACT", K, H, x, y), START, x + 100, y), x + 200, y)
+    AB = _vm(ng, "SUBTRACT", K, A, x + 300, y)
+    t = shading.math(ng, "DIVIDE", _vm(ng, "DOT_PRODUCT", _vm(ng, "SUBTRACT", P, A, x + 300, y - 100), AB, x + 400, y - 100),
+                     _vm(ng, "DOT_PRODUCT", AB, AB, x + 400, y), x + 500, y - 100)
+    ng.nodes[-1].use_clamp = True
+    C = _vm(ng, "ADD", A, _vm(ng, "SCALE", AB, t, x + 600, y), x + 700, y)
+    v = _vm(ng, "SUBTRACT", P, C, x + 800, y)
+    target = _vm(ng, "ADD", C, _vm(ng, "SCALE", _vm(ng, "NORMALIZE", v, None, x + 900, y - 100), R, x + 1000, y - 100), x + 1100, y)
+    inside = shading.math(ng, "MULTIPLY", shading.math(ng, "LESS_THAN", _vm(ng, "LENGTH", v, None, x + 900, y + 100), R, x + 1000, y + 100),
+                          weight, x + 1100, y + 100)
+    return _vm(ng, "ADD", P, _vm(ng, "SCALE", _vm(ng, "SUBTRACT", target, P, x + 1200, y), inside, x + 1300, y), x + 1400, y)
 
 
 def push_group():
@@ -149,14 +172,17 @@ def push_group():
     gi, go = node(ng, "NodeGroupInput", -1200, 0), node(ng, "NodeGroupOutput", 1000, 0)
     pos = node(ng, "GeometryNodeInputPosition", -1000, 400).outputs[0]
     leg = _leg_group()
-    total = None
+    total, legs = None, []
     for j, side in enumerate("LR"):
         g = node(ng, "GeometryNodeGroup", -500, 300 - 450 * j, node_tree=leg)
         ng.links.new(pos, g.inputs["Position"])
+        loc = {}
         for k, key in enumerate(("Hip", "Knee", "Rest Knee")):
             oi = node(ng, "GeometryNodeObjectInfo", -800, 300 - 450 * j - 130 * k, transform_space="RELATIVE")
             ng.links.new(gi.outputs[f"{key} {side}"], oi.inputs["Object"])
             ng.links.new(oi.outputs["Location"], g.inputs[key])
+            loc[key] = oi.outputs["Location"]
+        legs.append((loc["Hip"], loc["Knee"], g.outputs["Surface"]))
         ng.links.new(gi.outputs[f"Radius {side}"], g.inputs["Radius"])
         rest = node(ng, "GeometryNodeInputNamedAttribute", -800, -50 - 450 * j, data_type="FLOAT")
         rest.inputs["Name"].default_value = REST.format(side)
@@ -183,7 +209,12 @@ def push_group():
     sp = node(ng, "GeometryNodeSetPosition", 600, 0)
     ng.links.new(gi.outputs["Geometry"], sp.inputs["Geometry"])
     ng.links.new(on.outputs[0], sp.inputs["Selection"])  # only the skirt is computed
-    ng.links.new(_vm(ng, "SCALE", blur.outputs[0], weight, 400, -100), sp.inputs["Offset"])
+    # the blur averages each vertex's push with its neighbours': the deepest ones (a leg at 90 deg) ended up
+    # back inside, up to 7 cm. Whatever is still in a thigh after it goes straight out to its surface
+    P = _vm(ng, "ADD", pos, _vm(ng, "SCALE", blur.outputs[0], weight, 300, -100), 400, -100)
+    for j, (H, K, R) in enumerate(legs):
+        P = _out(ng, P, H, K, R, weight, 400 + 1500 * j, -600)
+    ng.links.new(_vm(ng, "SUBTRACT", P, pos, 3500, -100), sp.inputs["Offset"])
     ng.links.new(sp.outputs[0], go.inputs[0])
     return ng
 
